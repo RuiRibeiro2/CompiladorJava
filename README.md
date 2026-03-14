@@ -31,9 +31,9 @@ Executar exemplos
 ```
 
 Testes automatizados
-- Para validar a Meta 1 localmente use `test2_meta1.sh` (recomendado):
+- Para validar a Meta 1 localmente use `test2.sh`:
 ```bash
 cd projeto/github/CompiladorJava
-bash test2_meta1.sh -b ./jucompiler
+bash test2.sh -b ./jucompiler
 ```
 
