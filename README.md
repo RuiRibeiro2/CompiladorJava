@@ -17,8 +17,7 @@ Requisitos
 
 Compilar manualmente
 ```bash
-cd projeto/github/CompiladorJava
-flex jucompiler.l
+lex jucompiler.l
 gcc -o jucompiler lex.yy.c -lfl
 ```
 
