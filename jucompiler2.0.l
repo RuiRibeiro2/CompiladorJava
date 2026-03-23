@@ -3,8 +3,13 @@
     Disciplina de Compiladores
     ---
     Trabalho realizado por
+
     Leonardo Duarte
     2023213089
+
+    Rui Ribeiro
+    202118947
+
     --- */
 
     /* place here any C variables and definitions */
@@ -33,8 +38,9 @@
 digit   [0-9]
 alpha   [_$a-zA-Z]
 digits  {digit}([_0-9]*{digit})?
-exponencial    [eE][+-]?{digits}
+exponent    [eE][+-]?{digits}
 whitespace [ \t\f]
+newline (\r\n|\n|\r)
 
 %X COMMENT
 %X STRLIT
@@ -42,7 +48,7 @@ whitespace [ \t\f]
 %%
 
 {whitespace}+                             { ; }
-\r\n|\n|\r                          { row++; column = 0; }
+{newline}                          { row++; column = 0; }
 
 
 
@@ -142,12 +148,12 @@ whitespace [ \t\f]
 
 0|[1-9]([_0-9]*[0-9])?              { if (flag_l) printf("NATURAL(%s)\n", yytext); }
 
-{digits}"."({digits})?({exponencial})?     { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
-"."{digits}({exponencial})?                { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
-{digits}{exponencial}                      { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
+{digits}"."({digits})?({exponent})?     { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
+"."{digits}({exponent})?                { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
+{digits}{exponent}                      { if (flag_l) printf("DECIMAL(%s)\n", yytext); }
 
 "/*"                                { BEGIN(COMMENT); com_row = row; com_col = column - yyleng + 1; }
-<COMMENT>(\r\n|\n|\r)               { row++; column = 0; }
+<COMMENT>{newline}               { row++; column = 0; }
 <COMMENT>.                          { ; }
 <COMMENT>"*/"                       { BEGIN(INITIAL); }
 <COMMENT><<EOF>>                    { printf("Line %d, col %d: unterminated comment\n", com_row, com_col); BEGIN(INITIAL); return 0; }
@@ -185,7 +191,7 @@ whitespace [ \t\f]
             str_err = 1;
         }
 
-<STRLIT>(\r\n|\n|\r)  {
+<STRLIT>{newline}  {
             printf("Line %d, col %d: unterminated string literal\n", str_row, str_col);
             row++; column = 0;
             BEGIN(INITIAL);
