@@ -79,6 +79,7 @@
     typedef struct node Node;
 }
 
+
 %union {
     char *lexeme;
     Node *node;
@@ -153,11 +154,13 @@ FieldDecl
         head = append_sibling(head, fd);
         Node *cur = $5;
         while (cur) {
+            Node *next = cur->sibling;
+            cur->sibling = NULL;
             Node *fd2 = new_node("FieldDecl", NULL);
             add_child(fd2, make_type_node(t));
             add_child(fd2, cur);
             head = append_sibling(head, fd2);
-            cur = cur->sibling;
+            cur = next;
         }
         $$ = head;
     }
@@ -176,7 +179,6 @@ Type
     : BOOL { $$ = new_node("Bool", NULL); }
     | INT { $$ = new_node("Int", NULL); }
     | DOUBLE { $$ = new_node("Double", NULL); }
-    | STRING LSQ RSQ { $$ = new_node("StringArray", NULL); }
     ;
 
 MethodHeader
@@ -209,6 +211,14 @@ FormalParams
         add_child(pd, new_node("Identifier", $2));
         add_child(n, pd);
         add_child(n, $3);
+        $$ = n;
+    }
+    | STRING LSQ RSQ IDENTIFIER {
+        Node *n = new_node("MethodParams", NULL);
+        Node *pd = new_node("ParamDecl", NULL);
+        add_child(pd, new_node("StringArray", NULL));
+        add_child(pd, new_node("Identifier", $4));
+        add_child(n, pd);
         $$ = n;
     }
     ;
@@ -252,11 +262,13 @@ VarDecl
         head = append_sibling(head, vd);
         Node *cur = $3;
         while (cur) {
+            Node *next = cur->sibling;
+            cur->sibling = NULL;
             Node *vd2 = new_node("VarDecl", NULL);
             add_child(vd2, make_type_node(t));
             add_child(vd2, cur);
             head = append_sibling(head, vd2);
-            cur = cur->sibling;
+            cur = next;
         }
         $$ = head;
     }
@@ -409,6 +421,8 @@ Expr
 %%
 
 void yyerror(const char *s) {
+    int err_col = column_number - (int)strlen(yytext);
+    if (err_col < 1) err_col = 1;
     syntax_errors++;
-    printf("Line %d, col %d: %s: %s\n", line_number, column_number, s, yytext);
+    printf("Line %d, col %d: %s: %s\n", line_number, err_col, s, yytext);
 }
