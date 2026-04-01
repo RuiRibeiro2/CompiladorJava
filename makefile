@@ -7,7 +7,7 @@ CFLAGS = -Wall -g
 
 # Ficheiros
 TARGET = jucompiler
-LEX_FILE = jucompiler.l
+LEX_FILE = jucompiler2.0.l
 
 # Regra padrão
 $(TARGET): lex.yy.c
