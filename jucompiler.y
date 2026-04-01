@@ -1,12 +1,24 @@
 %{
+    /* ---
+    Disciplina de Compiladores
+    ---
+    Trabalho realizado por
+
+    Leonardo Duarte
+    2023213089
+
+    Rui Ribeiro
+    202118947
+
+    --- */
     #include <stdio.h>
     #include <string.h>
     #include <stdlib.h>
 
     extern int yylex(void);
     extern char *yytext;
-    extern int line_number;
-    extern int column_number;
+    extern int row;
+    extern int column;
     extern int flag_t;
     extern int flag_e2;
 
@@ -73,6 +85,7 @@
     }
 
     static int syntax_errors = 0;
+    Node *ast_root = NULL;
 %}
 
 %code requires {
@@ -103,11 +116,12 @@
 %right UPLUS UMINUS
 
 %type <node> Program ProgramMembers ProgramMember MethodDecl FieldDecl FieldDeclTail
-%type <node> Type MethodHeader MethodBody MethodBodyItems MethodBodyItem
+%type <node> Type ParamType MethodHeader MethodBody MethodBodyItems MethodBodyItem
 %type <node> FormalParamsOpt FormalParams FormalParamsTail
 %type <node> VarDecl VarDeclTail
-%type <node> Statement StatementList ElseOpt ExprOpt PrintArg
-%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs Expr
+%type <node> Statement MatchedStatement UnmatchedStatement StatementList ExprOpt PrintArg
+%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs Expr ExprOrAssign
+
 
 %start Program
 
@@ -119,7 +133,7 @@ Program
         add_child(n, new_node("Identifier", $2));
         add_child(n, $4);
         $$ = n;
-        if (flag_t && syntax_errors == 0 && !flag_e2) print_ast(n, 0);
+        ast_root = n;
     }
     ;
 
@@ -154,12 +168,14 @@ FieldDecl
         head = append_sibling(head, fd);
         Node *cur = $5;
         while (cur) {
-            Node *next = cur->sibling;
+            Node * next = cur->sibling;
             cur->sibling = NULL;
+
             Node *fd2 = new_node("FieldDecl", NULL);
             add_child(fd2, make_type_node(t));
             add_child(fd2, cur);
             head = append_sibling(head, fd2);
+
             cur = next;
         }
         $$ = head;
@@ -179,6 +195,11 @@ Type
     : BOOL { $$ = new_node("Bool", NULL); }
     | INT { $$ = new_node("Int", NULL); }
     | DOUBLE { $$ = new_node("Double", NULL); }
+    ;
+
+ParamType
+    : Type { $$ = $1; }
+    | STRING LSQ RSQ { $$ = new_node("StringArray", NULL); }
     ;
 
 MethodHeader
@@ -204,7 +225,7 @@ FormalParamsOpt
     ;
 
 FormalParams
-    : Type IDENTIFIER FormalParamsTail {
+    : ParamType IDENTIFIER FormalParamsTail {
         Node *n = new_node("MethodParams", NULL);
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $1);
@@ -213,18 +234,10 @@ FormalParams
         add_child(n, $3);
         $$ = n;
     }
-    | STRING LSQ RSQ IDENTIFIER {
-        Node *n = new_node("MethodParams", NULL);
-        Node *pd = new_node("ParamDecl", NULL);
-        add_child(pd, new_node("StringArray", NULL));
-        add_child(pd, new_node("Identifier", $4));
-        add_child(n, pd);
-        $$ = n;
-    }
     ;
 
 FormalParamsTail
-    : FormalParamsTail COMMA Type IDENTIFIER {
+    : FormalParamsTail COMMA ParamType IDENTIFIER {
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $3);
         add_child(pd, new_node("Identifier", $4));
@@ -254,20 +267,22 @@ MethodBodyItem
 VarDecl
     : Type IDENTIFIER VarDeclTail SEMICOLON {
         Node *head = NULL;
-        Node *t = $1;
+        Node *type = $1;
         Node *id = new_node("Identifier", $2);
-        Node *vd = new_node("VarDecl", NULL);
-        add_child(vd, make_type_node(t));
-        add_child(vd, id);
-        head = append_sibling(head, vd);
+        Node *var_decl = new_node("VarDecl", NULL);
+        add_child(var_decl, make_type_node(type));
+        add_child(var_decl, id);
+        head = append_sibling(head, var_decl);
         Node *cur = $3;
         while (cur) {
             Node *next = cur->sibling;
             cur->sibling = NULL;
-            Node *vd2 = new_node("VarDecl", NULL);
-            add_child(vd2, make_type_node(t));
-            add_child(vd2, cur);
-            head = append_sibling(head, vd2);
+
+            Node *var_decl2 = new_node("VarDecl", NULL);
+            add_child(var_decl2, make_type_node(type));
+            add_child(var_decl2, cur);
+            head = append_sibling(head, var_decl2);
+
             cur = next;
         }
         $$ = head;
@@ -283,8 +298,13 @@ VarDeclTail
     ;
 
 Statement
+    : MatchedStatement { $$ = $1; }
+    | UnmatchedStatement { $$ = $1; }
+    ;
+
+MatchedStatement
     : LBRACE StatementList RBRACE {
-        if (!$2) $$ = new_node("Block", NULL);
+        if (!$2) $$ = NULL;
         else if (!$2->sibling) $$ = $2;
         else {
             Node *b = new_node("Block", NULL);
@@ -292,18 +312,24 @@ Statement
             $$ = b;
         }
     }
-    | IF LPAR Expr RPAR Statement ElseOpt {
+    | IF LPAR ExprOrAssign RPAR MatchedStatement ELSE MatchedStatement {
         Node *n = new_node("If", NULL);
         add_child(n, $3);
-        add_child(n, $5);
-        if ($6) add_child(n, $6);
+        
+        if ($5) add_child(n, $5);
+        else add_child(n, new_node("Block", NULL));
+        
+        if ($7) add_child(n, $7);
         else add_child(n, new_node("Block", NULL));
         $$ = n;
     }
-    | WHILE LPAR Expr RPAR Statement {
+    | WHILE LPAR ExprOrAssign RPAR MatchedStatement {
         Node *n = new_node("While", NULL);
         add_child(n, $3);
-        add_child(n, $5);
+
+        if ($5) add_child(n, $5);
+        else add_child(n, new_node("Block", NULL));
+
         $$ = n;
     }
     | RETURN ExprOpt SEMICOLON {
@@ -323,23 +349,53 @@ Statement
     | error SEMICOLON { $$ = NULL; }
     ;
 
+UnmatchedStatement
+    : IF LPAR ExprOrAssign RPAR Statement {
+        Node *n = new_node("If", NULL);
+        add_child(n, $3);
+
+        if ($5) add_child(n, $5);
+        else add_child(n, new_node("Block", NULL));
+        
+        add_child(n, new_node("Block", NULL)); // Empty Else block
+        $$ = n;
+    }
+    | IF LPAR ExprOrAssign RPAR MatchedStatement ELSE UnmatchedStatement {
+        Node *n = new_node("If", NULL);
+        add_child(n, $3);
+        
+        if ($5) add_child(n, $5);
+        else add_child(n, new_node("Block", NULL));
+        
+        if ($7) add_child(n, $7);
+        else add_child(n, new_node("Block", NULL));
+        
+        $$ = n;
+    }
+    | WHILE LPAR ExprOrAssign RPAR UnmatchedStatement {
+        Node *n = new_node("While", NULL);
+        add_child(n, $3);
+
+        if ($5) add_child(n, $5);
+        else add_child(n, new_node("Block", NULL));
+
+        $$ = n;
+    }
+    ;
+
 StatementList
     : StatementList Statement { $$ = append_sibling($1, $2); }
     | /* empty */ { $$ = NULL; }
     ;
 
-ElseOpt
-    : ELSE Statement { $$ = $2; }
-    | /* empty */ { $$ = NULL; }
-    ;
 
 ExprOpt
-    : Expr { $$ = $1; }
+    : ExprOrAssign { $$ = $1; }
     | /* empty */ { $$ = NULL; }
     ;
 
 PrintArg
-    : Expr { $$ = $1; }
+    : ExprOrAssign { $$ = $1; }
     | STRLIT { $$ = new_node("StrLit", $1); }
     ;
 
@@ -359,12 +415,17 @@ ExprListOpt
     ;
 
 ExprList
-    : Expr { $$ = $1; }
+    : ExprOrAssign { $$ = $1; }
     | ExprList COMMA Expr { $$ = append_sibling($1, $3); }
     ;
 
+ExprOrAssign
+    : Expr { $$ = $1; }
+    | Assignment { $$ = $1; }
+    ;
+
 Assignment
-    : IDENTIFIER ASSIGN Expr {
+    : IDENTIFIER ASSIGN ExprOrAssign {
         Node *n = new_node("Assign", NULL);
         add_child(n, new_node("Identifier", $1));
         add_child(n, $3);
@@ -373,7 +434,7 @@ Assignment
     ;
 
 ParseArgs
-    : PARSEINT LPAR IDENTIFIER LSQ Expr RSQ RPAR {
+    : PARSEINT LPAR IDENTIFIER LSQ ExprOrAssign RSQ RPAR {
         Node *n = new_node("ParseArgs", NULL);
         add_child(n, new_node("Identifier", $3));
         add_child(n, $5);
@@ -402,10 +463,11 @@ Expr
     | MINUS Expr %prec UMINUS { $$ = make_unary("Minus", $2); }
     | PLUS Expr %prec UPLUS { $$ = make_unary("Plus", $2); }
     | NOT Expr { $$ = make_unary("Not", $2); }
-    | LPAR Expr RPAR { $$ = $2; }
+    //| LPAR Expr RPAR { $$ = $2; }
+    | LPAR ExprOrAssign RPAR { $$ = $2; }
     | LPAR error RPAR { $$ = NULL; }
     | MethodInvocation { $$ = $1; }
-    | Assignment { $$ = $1; }
+    // | Assignment { $$ = $1; }
     | ParseArgs { $$ = $1; }
     | IDENTIFIER DOTLENGTH {
         Node *n = new_node("Length", NULL);
@@ -421,8 +483,13 @@ Expr
 %%
 
 void yyerror(const char *s) {
-    int err_col = column_number - (int)strlen(yytext);
-    if (err_col < 1) err_col = 1;
     syntax_errors++;
-    printf("Line %d, col %d: %s: %s\n", line_number, err_col, s, yytext);
+    printf("Line %d, col %d: %s: %s\n", row, column - (int)strlen(yytext) + 1, s, yytext);
+    // printf("Line %d, col %d: %s: %s\n", row, column, s, yytext);
+}
+
+void print_final_ast() {
+    if (flag_t && syntax_errors == 0 && !flag_e2) {
+        print_ast(ast_root, 0);
+    }
 }

@@ -8,8 +8,9 @@ CFLAGS = -Wall -g
 
 # Ficheiros
 TARGET = jucompiler
-LEX_FILE = jucompiler2.0.l
-YACC_FILE = calc.y
+# LEX_FILE = jucompiler.l
+LEX_FILE = jucompiler.l
+YACC_FILE = jucompiler.y
 
 
 # Regra padrão
