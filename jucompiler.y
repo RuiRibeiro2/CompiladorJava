@@ -234,6 +234,14 @@ FormalParams
         add_child(n, $3);
         $$ = n;
     }
+    | STRING LSQ RSQ IDENTIFIER {
+        Node *n = new_node("MethodParams", NULL);
+        Node *pd = new_node("ParamDecl", NULL);
+        add_child(pd, new_node("StringArray", NULL));
+        add_child(pd, new_node("Identifier", $4));
+        add_child(n, pd);
+        $$ = n;
+    }
     ;
 
 FormalParamsTail
@@ -483,6 +491,8 @@ Expr
 %%
 
 void yyerror(const char *s) {
+    int err_col = column_number - (int)strlen(yytext);
+    if (err_col < 1) err_col = 1;
     syntax_errors++;
     printf("Line %d, col %d: %s: %s\n", row, column - (int)strlen(yytext) + 1, s, yytext);
     // printf("Line %d, col %d: %s: %s\n", row, column, s, yytext);
