@@ -241,7 +241,7 @@ void meta01() {
     yylex();
 }
 
-void meta01_l() {
+void meta01_list() {
     flag_l = 1;
     meta01();
 }
@@ -251,7 +251,7 @@ void meta02() {
     print_final_ast();
 }
 
-void meta02_t() {
+void meta02_tree() {
     flag_t = 1;
     meta02();
 }
@@ -265,11 +265,11 @@ int main(int argc, char **argv) {
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        meta01_l();
+        meta01_list();
     } else if (argc > 1 && strcmp(argv[1], "-e2") == 0) {
         meta02();
     } else if (argc > 1 && strcmp(argv[1], "-t") == 0) {
-        meta02_t();
+        meta02_tree();
     } 
 
     return 0;
