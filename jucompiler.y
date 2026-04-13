@@ -114,9 +114,10 @@
 %token ASSIGN STAR COMMA DIV EQ GE GT LBRACE LE LPAR LSQ LT MINUS MOD NE NOT OR
 %token PLUS RBRACE RPAR RSQ SEMICOLON ARROW LSHIFT RSHIFT XOR AND
 
+%right ASSIGN
 %left OR
-%left XOR
 %left AND
+%left XOR
 %left EQ NE
 %left LT LE GT GE
 %left LSHIFT RSHIFT
@@ -126,11 +127,11 @@
 %right UPLUS UMINUS
 
 %type <node> Program ProgramMembers ProgramMember MethodDecl FieldDecl FieldDeclTail
-%type <node> Type ParamType MethodHeader MethodBody MethodBodyItems MethodBodyItem
+%type <node> Type MethodHeader MethodBody MethodBodyItems MethodBodyItem
 %type <node> FormalParamsOpt FormalParams FormalParamsTail
 %type <node> VarDecl VarDeclTail
 %type <node> Statement MatchedStatement UnmatchedStatement StatementList ExprOpt PrintArg
-%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs Expr ExprOrAssign
+%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs ExprOrAssign Expr
 
 
 %start Program
@@ -210,10 +211,6 @@ Type
     | DOUBLE { $$ = new_node("Double", NULL); }
     ;
 
-ParamType
-    : Type { $$ = $1; }
-    | STRING LSQ RSQ { $$ = new_node("StringArray", NULL); }
-    ;
 
 MethodHeader
     : Type IDENTIFIER LPAR FormalParamsOpt RPAR {
@@ -240,7 +237,16 @@ FormalParamsOpt
     ;
 
 FormalParams
-    : ParamType IDENTIFIER FormalParamsTail {
+    : STRING LSQ RSQ IDENTIFIER {
+        Node *n = new_node("MethodParams", NULL);
+        Node *pd = new_node("ParamDecl", NULL);
+        add_child(pd, new_node("StringArray", NULL));
+        add_child(pd, new_node("Identifier", $4));
+        free($4);
+        add_child(n, pd);
+        $$ = n;
+    }
+    | Type IDENTIFIER FormalParamsTail {
         Node *n = new_node("MethodParams", NULL);
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $1);
@@ -253,7 +259,7 @@ FormalParams
     ;
 
 FormalParamsTail
-    : FormalParamsTail COMMA ParamType IDENTIFIER {
+    : FormalParamsTail COMMA Type IDENTIFIER {
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $3);
         add_child(pd, new_node("Identifier", $4));
@@ -437,13 +443,9 @@ ExprListOpt
 
 ExprList
     : ExprOrAssign { $$ = $1; }
-    | ExprList COMMA Expr { $$ = append_sibling($1, $3); }
+    | ExprList COMMA ExprOrAssign { $$ = append_sibling($1, $3); }
     ;
 
-ExprOrAssign
-    : Expr { $$ = $1; }
-    | Assignment { $$ = $1; }
-    ;
 
 Assignment
     : IDENTIFIER ASSIGN ExprOrAssign {
@@ -466,6 +468,11 @@ ParseArgs
     | PARSEINT LPAR error RPAR { $$ = NULL; }
     ;
 
+ExprOrAssign
+    : Assignment { $$ = $1; }
+    | Expr { $$ = $1; }
+    ;
+
 Expr
     : Expr PLUS Expr { $$ = make_binary("Add", $1, $3); }
     | Expr MINUS Expr { $$ = make_binary("Sub", $1, $3); }
@@ -486,11 +493,9 @@ Expr
     | MINUS Expr %prec UMINUS { $$ = make_unary("Minus", $2); }
     | PLUS Expr %prec UPLUS { $$ = make_unary("Plus", $2); }
     | NOT Expr { $$ = make_unary("Not", $2); }
-    //| LPAR Expr RPAR { $$ = $2; }
     | LPAR ExprOrAssign RPAR { $$ = $2; }
     | LPAR error RPAR { $$ = NULL; }
     | MethodInvocation { $$ = $1; }
-    // | Assignment { $$ = $1; }
     | ParseArgs { $$ = $1; }
     | IDENTIFIER DOTLENGTH {
         Node *n = new_node("Length", NULL);

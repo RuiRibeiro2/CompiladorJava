@@ -241,50 +241,35 @@ void meta01() {
     yylex();
 }
 
+void meta01_l() {
+    flag_l = 1;
+    meta01();
+}
+
 void meta02() {
     yyparse();
     print_final_ast();
 }
 
+void meta02_t() {
+    flag_t = 1;
+    meta02();
+}
+
 
 int main(int argc, char **argv) {
 
-/*
-nenhuma flag: só erros
--e2: só erros (meta 1 e 2)
--e1: só erros (meta 1)
--t: imprimir árvore ou erros (meta 1 e 2)
--l: imprimir tokens e  erros (meta 1)
-*/
-
-/*
-if argc = 1: (no flags)
-    most advanced function
-else if -e1:
-    yylex
-else if -l:
-    flag_l = 1
-    yylex
-else if -e2:
-    yyparse
-else if -t:
-    flag_t = 1
-    yyparse
-*/
-
     if (argc == 1){
-        // meta alcançada mais recentemente
+        // meta mais recente
         meta02();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        flag_l = 1;
-        meta01();
+        meta01_l();
     } else if (argc > 1 && strcmp(argv[1], "-e2") == 0) {
         meta02();
     } else if (argc > 1 && strcmp(argv[1], "-t") == 0) {
-        flag_t = 1;
-        meta02();
+        meta02_t();
     } 
 
     return 0;
