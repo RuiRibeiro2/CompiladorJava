@@ -25,4 +25,7 @@ lex.yy.c: $(LEX_FILE) y.tab.h
 
 
 clean:
-	rm -f $(TARGET) lex.yy.c y.tab.c y.tab.h y.output
+	rm -f $(TARGET) lex.yy.c y.tab.c y.tab.h y.output jucompiler.zip
+
+zip:
+	zip jucompiler.zip $(LEX_FILE) $(YACC_FILE)

@@ -35,7 +35,6 @@
 
     int flag_l = 0;
     int lex_only = 0;
-    int flag_e2 = 0;
     int flag_t = 0;
 
 %}
@@ -237,25 +236,57 @@ extern int yylex();
 extern int yyparse();
 extern void print_final_ast();
 
+void meta01() {
+    lex_only = 1;
+    yylex();
+}
+
+void meta02() {
+    yyparse();
+    print_final_ast();
+}
+
+
 int main(int argc, char **argv) {
-    if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        flag_l = 1;
-        lex_only = 1;
+
+/*
+nenhuma flag: só erros
+-e2: só erros (meta 1 e 2)
+-e1: só erros (meta 1)
+-t: imprimir árvore ou erros (meta 1 e 2)
+-l: imprimir tokens e  erros (meta 1)
+*/
+
+/*
+if argc = 1: (no flags)
+    most advanced function
+else if -e1:
+    yylex
+else if -l:
+    flag_l = 1
+    yylex
+else if -e2:
+    yyparse
+else if -t:
+    flag_t = 1
+    yyparse
+*/
+
+    if (argc == 1){
+        // meta alcançada mais recentemente
+        meta02();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
-        flag_l = 0;
-        lex_only = 1;
+        meta01();
+    } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
+        flag_l = 1;
+        meta01();
+    } else if (argc > 1 && strcmp(argv[1], "-e2") == 0) {
+        meta02();
     } else if (argc > 1 && strcmp(argv[1], "-t") == 0) {
         flag_t = 1;
-    } else if (argc > 1 && strcmp(argv[1], "-e2") == 0) {
-        flag_e2 = 1;
-    }
+        meta02();
+    } 
 
-    if (lex_only) {
-        yylex();
-    } else {
-        yyparse();
-        print_final_ast(); 
-    }
     return 0;
 }
 

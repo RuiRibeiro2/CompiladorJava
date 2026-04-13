@@ -20,6 +20,7 @@
     extern int row;
     extern int column;
     extern int flag_t;
+    extern int flag_e2;
 
     void yyerror(const char *s);
 
@@ -37,15 +38,6 @@
         n->child = NULL;
         n->sibling = NULL;
         return n;
-    }
-
-    static void free_ast(Node *n) {
-        if (!n) return;
-        free_ast(n->child);
-        free_ast(n->sibling);
-        free(n->type);
-        if (n->value) free(n->value);
-        free(n);
     }
 
     static Node *append_sibling(Node *a, Node *b) {
@@ -106,8 +98,6 @@
     Node *node;
 }
 
-%destructor { free($$); } <lexeme>
-
 %token <lexeme> IDENTIFIER NATURAL DECIMAL BOOLLIT STRLIT RESERVED
 %token BOOL INT DOUBLE STRING VOID CLASS PUBLIC STATIC RETURN IF ELSE WHILE
 %token PRINT PARSEINT DOTLENGTH
@@ -141,8 +131,8 @@ Program
     : CLASS IDENTIFIER LBRACE ProgramMembers RBRACE {
         Node *n = new_node("Program", NULL);
         add_child(n, new_node("Identifier", $2));
-        free($2);
         add_child(n, $4);
+        $$ = n;
         ast_root = n;
     }
     ;
@@ -170,26 +160,24 @@ MethodDecl
 FieldDecl
     : PUBLIC STATIC Type IDENTIFIER FieldDeclTail SEMICOLON {
         Node *head = NULL;
-        Node *type = $3;
+        Node *t = $3;
         Node *id = new_node("Identifier", $4);
-        Node *fie_decl = new_node("FieldDecl", NULL);
-        add_child(fie_decl, make_type_node(type));
-        add_child(fie_decl, id);
-        head = append_sibling(head, fie_decl);
+        Node *fd = new_node("FieldDecl", NULL);
+        add_child(fd, make_type_node(t));
+        add_child(fd, id);
+        head = append_sibling(head, fd);
         Node *cur = $5;
         while (cur) {
             Node * next = cur->sibling;
             cur->sibling = NULL;
 
-            Node *fie_decl2 = new_node("FieldDecl", NULL);
-            add_child(fie_decl2, make_type_node(type));
-            add_child(fie_decl2, cur);
-            head = append_sibling(head, fie_decl2);
+            Node *fd2 = new_node("FieldDecl", NULL);
+            add_child(fd2, make_type_node(t));
+            add_child(fd2, cur);
+            head = append_sibling(head, fd2);
 
             cur = next;
         }
-        free_ast($3);
-        free($4);
         $$ = head;
     }
     | error SEMICOLON { $$ = NULL; }
@@ -198,7 +186,6 @@ FieldDecl
 FieldDeclTail
     : FieldDeclTail COMMA IDENTIFIER {
         Node *id = new_node("Identifier", $3);
-        free($3);
         $$ = append_sibling($1, id);
     }
     | /* empty */ { $$ = NULL; }
@@ -220,7 +207,6 @@ MethodHeader
         Node *n = new_node("MethodHeader", NULL);
         add_child(n, $1);
         add_child(n, new_node("Identifier", $2));
-        free($2);
         add_child(n, $4);
         $$ = n;
     }
@@ -229,7 +215,6 @@ MethodHeader
         add_child(n, new_node("Void", NULL));
         add_child(n, new_node("Identifier", $2));
         add_child(n, $4);
-        free($2);
         $$ = n;
     }
     ;
@@ -245,7 +230,6 @@ FormalParams
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $1);
         add_child(pd, new_node("Identifier", $2));
-        free($2);
         add_child(n, pd);
         add_child(n, $3);
         $$ = n;
@@ -257,7 +241,6 @@ FormalParamsTail
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $3);
         add_child(pd, new_node("Identifier", $4));
-        free($4);
         $$ = append_sibling($1, pd);
     }
     | /* empty */ { $$ = NULL; }
@@ -302,8 +285,6 @@ VarDecl
 
             cur = next;
         }
-        free_ast($1);
-        free($2);
         $$ = head;
     }
     ;
@@ -312,7 +293,6 @@ VarDeclTail
     : VarDeclTail COMMA IDENTIFIER {
         Node *id = new_node("Identifier", $3);
         $$ = append_sibling($1, id);
-        free($3);
     }
     | /* empty */ { $$ = NULL; }
     ;
@@ -416,18 +396,17 @@ ExprOpt
 
 PrintArg
     : ExprOrAssign { $$ = $1; }
-    | STRLIT { $$ = new_node("StrLit", $1); free($1); }
+    | STRLIT { $$ = new_node("StrLit", $1); }
     ;
 
 MethodInvocation
     : IDENTIFIER LPAR ExprListOpt RPAR {
         Node *n = new_node("Call", NULL);
         add_child(n, new_node("Identifier", $1));
-        free($1);
         add_child(n, $3);
         $$ = n;
     }
-    | IDENTIFIER LPAR error RPAR { free($1); $$ = NULL; }
+    | IDENTIFIER LPAR error RPAR { $$ = NULL; }
     ;
 
 ExprListOpt
@@ -449,7 +428,6 @@ Assignment
     : IDENTIFIER ASSIGN ExprOrAssign {
         Node *n = new_node("Assign", NULL);
         add_child(n, new_node("Identifier", $1));
-        free($1);
         add_child(n, $3);
         $$ = n;
     }
@@ -459,7 +437,6 @@ ParseArgs
     : PARSEINT LPAR IDENTIFIER LSQ ExprOrAssign RSQ RPAR {
         Node *n = new_node("ParseArgs", NULL);
         add_child(n, new_node("Identifier", $3));
-        free($3);
         add_child(n, $5);
         $$ = n;
     }
@@ -496,12 +473,11 @@ Expr
         Node *n = new_node("Length", NULL);
         add_child(n, new_node("Identifier", $1));
         $$ = n;
-        free($1);
     }
-    | IDENTIFIER { $$ = new_node("Identifier", $1); free($1); }
-    | NATURAL { $$ = new_node("Natural", $1); free($1); }
-    | DECIMAL { $$ = new_node("Decimal", $1); free($1); }
-    | BOOLLIT { $$ = new_node("BoolLit", $1); free($1); }
+    | IDENTIFIER { $$ = new_node("Identifier", $1); }
+    | NATURAL { $$ = new_node("Natural", $1); }
+    | DECIMAL { $$ = new_node("Decimal", $1); }
+    | BOOLLIT { $$ = new_node("BoolLit", $1); }
     ;
 
 %%
@@ -513,12 +489,7 @@ void yyerror(const char *s) {
 }
 
 void print_final_ast() {
-    if (flag_t && syntax_errors == 0) {
+    if (flag_t && syntax_errors == 0 && !flag_e2) {
         print_ast(ast_root, 0);
     }
-}
-
-void free_final_ast() {
-    free_ast(ast_root);
-    ast_root = NULL;
 }
