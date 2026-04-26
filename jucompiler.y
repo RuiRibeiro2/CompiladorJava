@@ -14,30 +14,37 @@
     #include <stdio.h>
     #include <string.h>
     #include <stdlib.h>
+    #include "semantic.h"
 
     extern int yylex(void);
     extern char *yytext;
     extern int row;
     extern int column;
     extern int flag_t;
-    extern int flag_e2;
+    extern int flag_s;
 
     void yyerror(const char *s);
-
-    typedef struct node {
-        char *type;
-        char *value;
-        struct node *child;
-        struct node *sibling;
-    } Node;
 
     static Node *new_node(const char *type, const char *value) {
         Node *n = (Node *)malloc(sizeof(Node));
         n->type = strdup(type);
         n->value = value ? strdup(value) : NULL;
+        n->sem_type = NULL;
+        n->line = 0;
+        n->col = 0;
         n->child = NULL;
         n->sibling = NULL;
         return n;
+    }
+
+    static void free_ast(Node *n) {
+        if (!n) return;
+        free_ast(n->child);
+        free_ast(n->sibling);
+        free(n->type);
+        if (n->value) free(n->value);
+        if (n->sem_type) free(n->sem_type);
+        free(n);
     }
 
     static Node *append_sibling(Node *a, Node *b) {
@@ -73,23 +80,50 @@
         return new_node(t->type, t->value);
     }
 
+    static int is_expression_node(const char *type) {
+        return strcmp(type, "Add") == 0 || strcmp(type, "Sub") == 0 ||
+               strcmp(type, "Mul") == 0 || strcmp(type, "Div") == 0 ||
+               strcmp(type, "Mod") == 0 || strcmp(type, "And") == 0 ||
+               strcmp(type, "Or") == 0 || strcmp(type, "Xor") == 0 ||
+               strcmp(type, "Lshift") == 0 || strcmp(type, "Rshift") == 0 ||
+               strcmp(type, "Eq") == 0 || strcmp(type, "Ge") == 0 ||
+               strcmp(type, "Gt") == 0 || strcmp(type, "Le") == 0 ||
+               strcmp(type, "Lt") == 0 || strcmp(type, "Ne") == 0 ||
+               strcmp(type, "Minus") == 0 || strcmp(type, "Plus") == 0 ||
+               strcmp(type, "Not") == 0 || strcmp(type, "Identifier") == 0 ||
+               strcmp(type, "Natural") == 0 || strcmp(type, "Decimal") == 0 ||
+               strcmp(type, "BoolLit") == 0 || strcmp(type, "Length") == 0 ||
+               strcmp(type, "Assign") == 0 || strcmp(type, "Call") == 0 ||
+               strcmp(type, "ParseArgs") == 0;
+    }
+
     static void print_ast(Node *n, int depth) {
         int i;
         if (!n) return;
         for (i = 0; i < depth; i++) printf(".");
-        if (n->value)
-            printf("%s(%s)\n", n->type, n->value);
-        else
-            printf("%s\n", n->type);
+        if (n->value) {
+            if (n->sem_type && is_expression_node(n->type)) {
+                printf("%s(%s) - %s\n", n->type, n->value, n->sem_type);
+            } else {
+                printf("%s(%s)\n", n->type, n->value);
+            }
+        } else {
+            if (n->sem_type && is_expression_node(n->type)) {
+                printf("%s - %s\n", n->type, n->sem_type);
+            } else {
+                printf("%s\n", n->type);
+            }
+        }
         for (n = n->child; n; n = n->sibling) print_ast(n, depth + 2);
     }
 
     static int syntax_errors = 0;
+    static int semantic_errors = 0;
     Node *ast_root = NULL;
 %}
 
 %code requires {
-    typedef struct node Node;
+    #include "semantic.h"
 }
 
 
@@ -98,15 +132,19 @@
     Node *node;
 }
 
+%destructor { free($$); } <lexeme>
+
 %token <lexeme> IDENTIFIER NATURAL DECIMAL BOOLLIT STRLIT RESERVED
 %token BOOL INT DOUBLE STRING VOID CLASS PUBLIC STATIC RETURN IF ELSE WHILE
 %token PRINT PARSEINT DOTLENGTH
 %token ASSIGN STAR COMMA DIV EQ GE GT LBRACE LE LPAR LSQ LT MINUS MOD NE NOT OR
 %token PLUS RBRACE RPAR RSQ SEMICOLON ARROW LSHIFT RSHIFT XOR AND
+%locations
 
+%right ASSIGN
 %left OR
-%left XOR
 %left AND
+%left XOR
 %left EQ NE
 %left LT LE GT GE
 %left LSHIFT RSHIFT
@@ -116,11 +154,11 @@
 %right UPLUS UMINUS
 
 %type <node> Program ProgramMembers ProgramMember MethodDecl FieldDecl FieldDeclTail
-%type <node> Type ParamType MethodHeader MethodBody MethodBodyItems MethodBodyItem
+%type <node> Type MethodHeader MethodBody MethodBodyItems MethodBodyItem
 %type <node> FormalParamsOpt FormalParams FormalParamsTail
 %type <node> VarDecl VarDeclTail
 %type <node> Statement MatchedStatement UnmatchedStatement StatementList ExprOpt PrintArg
-%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs Expr ExprOrAssign
+%type <node> MethodInvocation ExprListOpt ExprList Assignment ParseArgs ExprOrAssign Expr
 
 
 %start Program
@@ -131,8 +169,8 @@ Program
     : CLASS IDENTIFIER LBRACE ProgramMembers RBRACE {
         Node *n = new_node("Program", NULL);
         add_child(n, new_node("Identifier", $2));
+        free($2);
         add_child(n, $4);
-        $$ = n;
         ast_root = n;
     }
     ;
@@ -160,24 +198,26 @@ MethodDecl
 FieldDecl
     : PUBLIC STATIC Type IDENTIFIER FieldDeclTail SEMICOLON {
         Node *head = NULL;
-        Node *t = $3;
+        Node *type = $3;
         Node *id = new_node("Identifier", $4);
-        Node *fd = new_node("FieldDecl", NULL);
-        add_child(fd, make_type_node(t));
-        add_child(fd, id);
-        head = append_sibling(head, fd);
+        Node *fie_decl = new_node("FieldDecl", NULL);
+        add_child(fie_decl, make_type_node(type));
+        add_child(fie_decl, id);
+        head = append_sibling(head, fie_decl);
         Node *cur = $5;
         while (cur) {
             Node * next = cur->sibling;
             cur->sibling = NULL;
 
-            Node *fd2 = new_node("FieldDecl", NULL);
-            add_child(fd2, make_type_node(t));
-            add_child(fd2, cur);
-            head = append_sibling(head, fd2);
+            Node *fie_decl2 = new_node("FieldDecl", NULL);
+            add_child(fie_decl2, make_type_node(type));
+            add_child(fie_decl2, cur);
+            head = append_sibling(head, fie_decl2);
 
             cur = next;
         }
+        free_ast($3);
+        free($4);
         $$ = head;
     }
     | error SEMICOLON { $$ = NULL; }
@@ -186,6 +226,7 @@ FieldDecl
 FieldDeclTail
     : FieldDeclTail COMMA IDENTIFIER {
         Node *id = new_node("Identifier", $3);
+        free($3);
         $$ = append_sibling($1, id);
     }
     | /* empty */ { $$ = NULL; }
@@ -197,16 +238,13 @@ Type
     | DOUBLE { $$ = new_node("Double", NULL); }
     ;
 
-ParamType
-    : Type { $$ = $1; }
-    | STRING LSQ RSQ { $$ = new_node("StringArray", NULL); }
-    ;
 
 MethodHeader
     : Type IDENTIFIER LPAR FormalParamsOpt RPAR {
         Node *n = new_node("MethodHeader", NULL);
         add_child(n, $1);
         add_child(n, new_node("Identifier", $2));
+        free($2);
         add_child(n, $4);
         $$ = n;
     }
@@ -215,6 +253,7 @@ MethodHeader
         add_child(n, new_node("Void", NULL));
         add_child(n, new_node("Identifier", $2));
         add_child(n, $4);
+        free($2);
         $$ = n;
     }
     ;
@@ -225,30 +264,33 @@ FormalParamsOpt
     ;
 
 FormalParams
-    : ParamType IDENTIFIER FormalParamsTail {
-        Node *n = new_node("MethodParams", NULL);
-        Node *pd = new_node("ParamDecl", NULL);
-        add_child(pd, $1);
-        add_child(pd, new_node("Identifier", $2));
-        add_child(n, pd);
-        add_child(n, $3);
-        $$ = n;
-    }
-    | STRING LSQ RSQ IDENTIFIER {
+    : STRING LSQ RSQ IDENTIFIER {
         Node *n = new_node("MethodParams", NULL);
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, new_node("StringArray", NULL));
         add_child(pd, new_node("Identifier", $4));
+        free($4);
         add_child(n, pd);
+        $$ = n;
+    }
+    | Type IDENTIFIER FormalParamsTail {
+        Node *n = new_node("MethodParams", NULL);
+        Node *pd = new_node("ParamDecl", NULL);
+        add_child(pd, $1);
+        add_child(pd, new_node("Identifier", $2));
+        free($2);
+        add_child(n, pd);
+        add_child(n, $3);
         $$ = n;
     }
     ;
 
 FormalParamsTail
-    : FormalParamsTail COMMA ParamType IDENTIFIER {
+    : FormalParamsTail COMMA Type IDENTIFIER {
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $3);
         add_child(pd, new_node("Identifier", $4));
+        free($4);
         $$ = append_sibling($1, pd);
     }
     | /* empty */ { $$ = NULL; }
@@ -293,6 +335,8 @@ VarDecl
 
             cur = next;
         }
+        free_ast($1);
+        free($2);
         $$ = head;
     }
     ;
@@ -301,6 +345,7 @@ VarDeclTail
     : VarDeclTail COMMA IDENTIFIER {
         Node *id = new_node("Identifier", $3);
         $$ = append_sibling($1, id);
+        free($3);
     }
     | /* empty */ { $$ = NULL; }
     ;
@@ -404,17 +449,18 @@ ExprOpt
 
 PrintArg
     : ExprOrAssign { $$ = $1; }
-    | STRLIT { $$ = new_node("StrLit", $1); }
+    | STRLIT { $$ = new_node("StrLit", $1); free($1); }
     ;
 
 MethodInvocation
     : IDENTIFIER LPAR ExprListOpt RPAR {
         Node *n = new_node("Call", NULL);
         add_child(n, new_node("Identifier", $1));
+        free($1);
         add_child(n, $3);
         $$ = n;
     }
-    | IDENTIFIER LPAR error RPAR { $$ = NULL; }
+    | IDENTIFIER LPAR error RPAR { free($1); $$ = NULL; }
     ;
 
 ExprListOpt
@@ -424,18 +470,15 @@ ExprListOpt
 
 ExprList
     : ExprOrAssign { $$ = $1; }
-    | ExprList COMMA Expr { $$ = append_sibling($1, $3); }
+    | ExprList COMMA ExprOrAssign { $$ = append_sibling($1, $3); }
     ;
 
-ExprOrAssign
-    : Expr { $$ = $1; }
-    | Assignment { $$ = $1; }
-    ;
 
 Assignment
     : IDENTIFIER ASSIGN ExprOrAssign {
         Node *n = new_node("Assign", NULL);
         add_child(n, new_node("Identifier", $1));
+        free($1);
         add_child(n, $3);
         $$ = n;
     }
@@ -445,10 +488,16 @@ ParseArgs
     : PARSEINT LPAR IDENTIFIER LSQ ExprOrAssign RSQ RPAR {
         Node *n = new_node("ParseArgs", NULL);
         add_child(n, new_node("Identifier", $3));
+        free($3);
         add_child(n, $5);
         $$ = n;
     }
     | PARSEINT LPAR error RPAR { $$ = NULL; }
+    ;
+
+ExprOrAssign
+    : Assignment { $$ = $1; }
+    | Expr { $$ = $1; }
     ;
 
 Expr
@@ -471,35 +520,50 @@ Expr
     | MINUS Expr %prec UMINUS { $$ = make_unary("Minus", $2); }
     | PLUS Expr %prec UPLUS { $$ = make_unary("Plus", $2); }
     | NOT Expr { $$ = make_unary("Not", $2); }
-    //| LPAR Expr RPAR { $$ = $2; }
     | LPAR ExprOrAssign RPAR { $$ = $2; }
     | LPAR error RPAR { $$ = NULL; }
     | MethodInvocation { $$ = $1; }
-    // | Assignment { $$ = $1; }
     | ParseArgs { $$ = $1; }
     | IDENTIFIER DOTLENGTH {
         Node *n = new_node("Length", NULL);
         add_child(n, new_node("Identifier", $1));
         $$ = n;
+        free($1);
     }
-    | IDENTIFIER { $$ = new_node("Identifier", $1); }
-    | NATURAL { $$ = new_node("Natural", $1); }
-    | DECIMAL { $$ = new_node("Decimal", $1); }
-    | BOOLLIT { $$ = new_node("BoolLit", $1); }
+    | IDENTIFIER { $$ = new_node("Identifier", $1); free($1); }
+    | NATURAL { $$ = new_node("Natural", $1); free($1); }
+    | DECIMAL { $$ = new_node("Decimal", $1); free($1); }
+    | BOOLLIT { $$ = new_node("BoolLit", $1); free($1); }
     ;
 
 %%
 
 void yyerror(const char *s) {
-    int err_col = column_number - (int)strlen(yytext);
-    if (err_col < 1) err_col = 1;
     syntax_errors++;
     printf("Line %d, col %d: %s: %s\n", row, column - (int)strlen(yytext) + 1, s, yytext);
     // printf("Line %d, col %d: %s: %s\n", row, column, s, yytext);
 }
 
 void print_final_ast() {
-    if (flag_t && syntax_errors == 0 && !flag_e2) {
+    if (flag_t && syntax_errors == 0 && semantic_errors == 0) {
         print_ast(ast_root, 0);
     }
+}
+
+int get_syntax_errors() {
+    return syntax_errors;
+}
+
+int run_semantic(int print_tables) {
+    if (syntax_errors != 0 || !ast_root) {
+        semantic_errors = 0;
+        return 0;
+    }
+    semantic_errors = run_semantic_phase(ast_root, print_tables);
+    return semantic_errors;
+}
+
+void free_final_ast() {
+    free_ast(ast_root);
+    ast_root = NULL;
 }

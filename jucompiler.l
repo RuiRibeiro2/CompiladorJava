@@ -21,7 +21,13 @@
     int row = 1;
     int column = 0;
 
-    #define YY_USER_ACTION column += yyleng;
+    #define YY_USER_ACTION do { \
+        yylloc.first_line = row; \
+        yylloc.first_column = column + 1; \
+        yylloc.last_line = row; \
+        yylloc.last_column = column + yyleng; \
+        column += yyleng; \
+    } while (0);
 
     char str_lit[1024];
     char * str_ptr;
@@ -35,8 +41,8 @@
 
     int flag_l = 0;
     int lex_only = 0;
-    int flag_e2 = 0;
     int flag_t = 0;
+    int flag_s = 0;
 
 %}
 
@@ -236,26 +242,62 @@ newline (\r\n|\n|\r)
 extern int yylex();
 extern int yyparse();
 extern void print_final_ast();
+extern int get_syntax_errors();
+extern int run_semantic(int print_tables);
+
+void meta01() {
+    lex_only = 1;
+    yylex();
+}
+
+void meta01_l() {
+    flag_l = 1;
+    meta01();
+}
+
+void meta02() {
+    yyparse();
+    print_final_ast();
+}
+
+void meta02_t() {
+    flag_t = 1;
+    meta02();
+}
+
+void meta03() {
+    yyparse();
+    if (get_syntax_errors() == 0) {
+        run_semantic(flag_s);
+    }
+    print_final_ast();
+}
+
+void meta03_s() {
+    flag_s = 1;
+    flag_t = 1;
+    meta03();
+}
 
 int main(int argc, char **argv) {
-    if (argc > 1 && strcmp(argv[1], "-l") == 0) {
-        flag_l = 1;
-        lex_only = 1;
+
+    if (argc == 1){
+        // meta mais recente
+        meta03();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
-        flag_l = 0;
-        lex_only = 1;
-    } else if (argc > 1 && strcmp(argv[1], "-t") == 0) {
-        flag_t = 1;
+        meta01();
+    } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
+        meta01_l();
     } else if (argc > 1 && strcmp(argv[1], "-e2") == 0) {
-        flag_e2 = 1;
+        meta02();
+    } else if (argc > 1 && strcmp(argv[1], "-t") == 0) {
+        meta02_t();
+    } else if (argc > 1 && strcmp(argv[1], "-e3") == 0) {
+        meta03();
+    } else if (argc > 1 && strcmp(argv[1], "-s") == 0) {
+        meta03_s();
     }
 
-    if (lex_only) {
-        yylex();
-    } else {
-        yyparse();
-        print_final_ast(); 
-    }
     return 0;
 }
 

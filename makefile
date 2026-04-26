@@ -1,28 +1,25 @@
 # Makefile para compilar o jucompiler - Meta 2
 
 # Variáveis
-CC = gcc
-FLEX = flex
-YACC = yacc
-CFLAGS = -Wall -g
+CC=gcc
+CFLAGS=-Wall -g
+LEX=flex
+YACC=bison -d -y
+EXECUTABLE=jucompiler
 
-# Ficheiros
-TARGET = jucompiler
-# LEX_FILE = jucompiler.l
-LEX_FILE = jucompiler.l
-YACC_FILE = jucompiler.y
+all: $(EXECUTABLE)
 
+$(EXECUTABLE): lex.yy.c y.tab.c semantic.c
+	$(CC) $(CFLAGS) lex.yy.c y.tab.c semantic.c -lfl -o $(EXECUTABLE)
 
-# Regra padrão
-$(TARGET): y.tab.c lex.yy.c
-	$(CC) $(CFLAGS) y.tab.c lex.yy.c -o $(TARGET)
-	
-y.tab.c: $(YACC_FILE)
-	$(YACC) -dv $(YACC_FILE)
+lex.yy.c: jucompiler.l
+	$(LEX) jucompiler.l
 
-lex.yy.c: $(LEX_FILE) y.tab.h
-	$(FLEX) $(LEX_FILE)
-
+y.tab.c y.tab.h: jucompiler.y
+	$(YACC) jucompiler.y
 
 clean:
-	rm -f $(TARGET) lex.yy.c y.tab.c y.tab.h y.output
+	rm -f jucompiler lex.yy.c y.tab.c y.tab.h *.o
+
+.PHONY: all clean
+
