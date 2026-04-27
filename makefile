@@ -16,7 +16,7 @@ y.tab.c y.tab.h: jucompiler.y
 	$(YACC) jucompiler.y
 
 clean:
-	rm -f jucompiler lex.yy.c y.tab.c y.tab.h *.o jucmompiler.zip
+	rm -f jucompiler lex.yy.c y.tab.c y.tab.h *.o jucmompiler.zip y.output
 
 .PHONY: all clean
 
