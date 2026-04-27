@@ -16,7 +16,7 @@
     #include <stdio.h>
     #include <string.h>
     #include "y.tab.h"
-
+    #include "semantic.h"
 
     int row = 1;
     int column = 0;
