@@ -1,6 +1,3 @@
-# Makefile para compilar o jucompiler - Meta 2
-
-# Variáveis
 CC=gcc
 CFLAGS=-Wall -g
 LEX=flex
@@ -22,4 +19,3 @@ clean:
 	rm -f jucompiler lex.yy.c y.tab.c y.tab.h *.o
 
 .PHONY: all clean
-
