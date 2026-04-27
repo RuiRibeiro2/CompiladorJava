@@ -606,3 +606,4 @@ void free_final_ast() {
     free_ast(ast_root);
     ast_root = NULL;
 }
+    
