@@ -80,6 +80,34 @@
         return new_node(t->type, t->value);
     }
 
+    static void set_node_loc(Node *n, int line, int col) {
+        if (!n) return;
+        n->line = line;
+        n->col = col;
+    }
+
+    static Node *make_leaf_at(const char *type, const char *value, int line, int col) {
+        Node *n = new_node(type, value);
+        set_node_loc(n, line, col);
+        return n;
+    }
+
+    static Node *make_identifier_at(const char *name, int line, int col) {
+        return make_leaf_at("Identifier", name, line, col);
+    }
+
+    static Node *make_binary_at(const char *type, Node *a, Node *b, int line, int col) {
+        Node *n = make_binary(type, a, b);
+        set_node_loc(n, line, col);
+        return n;
+    }
+
+    static Node *make_unary_at(const char *type, Node *a, int line, int col) {
+        Node *n = make_unary(type, a);
+        set_node_loc(n, line, col);
+        return n;
+    }
+
     static int is_expression_node(const char *type) {
         return strcmp(type, "Add") == 0 || strcmp(type, "Sub") == 0 ||
                strcmp(type, "Mul") == 0 || strcmp(type, "Div") == 0 ||
@@ -168,7 +196,7 @@
 Program
     : CLASS IDENTIFIER LBRACE ProgramMembers RBRACE {
         Node *n = new_node("Program", NULL);
-        add_child(n, new_node("Identifier", $2));
+        add_child(n, make_identifier_at($2, @2.first_line, @2.first_column));
         free($2);
         add_child(n, $4);
         ast_root = n;
@@ -199,7 +227,7 @@ FieldDecl
     : PUBLIC STATIC Type IDENTIFIER FieldDeclTail SEMICOLON {
         Node *head = NULL;
         Node *type = $3;
-        Node *id = new_node("Identifier", $4);
+        Node *id = make_identifier_at($4, @4.first_line, @4.first_column);
         Node *fie_decl = new_node("FieldDecl", NULL);
         add_child(fie_decl, make_type_node(type));
         add_child(fie_decl, id);
@@ -225,7 +253,7 @@ FieldDecl
 
 FieldDeclTail
     : FieldDeclTail COMMA IDENTIFIER {
-        Node *id = new_node("Identifier", $3);
+        Node *id = make_identifier_at($3, @3.first_line, @3.first_column);
         free($3);
         $$ = append_sibling($1, id);
     }
@@ -243,7 +271,7 @@ MethodHeader
     : Type IDENTIFIER LPAR FormalParamsOpt RPAR {
         Node *n = new_node("MethodHeader", NULL);
         add_child(n, $1);
-        add_child(n, new_node("Identifier", $2));
+        add_child(n, make_identifier_at($2, @2.first_line, @2.first_column));
         free($2);
         add_child(n, $4);
         $$ = n;
@@ -251,7 +279,7 @@ MethodHeader
     | VOID IDENTIFIER LPAR FormalParamsOpt RPAR {
         Node *n = new_node("MethodHeader", NULL);
         add_child(n, new_node("Void", NULL));
-        add_child(n, new_node("Identifier", $2));
+        add_child(n, make_identifier_at($2, @2.first_line, @2.first_column));
         add_child(n, $4);
         free($2);
         $$ = n;
@@ -268,7 +296,7 @@ FormalParams
         Node *n = new_node("MethodParams", NULL);
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, new_node("StringArray", NULL));
-        add_child(pd, new_node("Identifier", $4));
+        add_child(pd, make_identifier_at($4, @4.first_line, @4.first_column));
         free($4);
         add_child(n, pd);
         $$ = n;
@@ -277,7 +305,7 @@ FormalParams
         Node *n = new_node("MethodParams", NULL);
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $1);
-        add_child(pd, new_node("Identifier", $2));
+        add_child(pd, make_identifier_at($2, @2.first_line, @2.first_column));
         free($2);
         add_child(n, pd);
         add_child(n, $3);
@@ -289,7 +317,7 @@ FormalParamsTail
     : FormalParamsTail COMMA Type IDENTIFIER {
         Node *pd = new_node("ParamDecl", NULL);
         add_child(pd, $3);
-        add_child(pd, new_node("Identifier", $4));
+        add_child(pd, make_identifier_at($4, @4.first_line, @4.first_column));
         free($4);
         $$ = append_sibling($1, pd);
     }
@@ -318,7 +346,7 @@ VarDecl
     : Type IDENTIFIER VarDeclTail SEMICOLON {
         Node *head = NULL;
         Node *type = $1;
-        Node *id = new_node("Identifier", $2);
+        Node *id = make_identifier_at($2, @2.first_line, @2.first_column);
         Node *var_decl = new_node("VarDecl", NULL);
         add_child(var_decl, make_type_node(type));
         add_child(var_decl, id);
@@ -343,7 +371,7 @@ VarDecl
 
 VarDeclTail
     : VarDeclTail COMMA IDENTIFIER {
-        Node *id = new_node("Identifier", $3);
+        Node *id = make_identifier_at($3, @3.first_line, @3.first_column);
         $$ = append_sibling($1, id);
         free($3);
     }
@@ -367,6 +395,7 @@ MatchedStatement
     }
     | IF LPAR ExprOrAssign RPAR MatchedStatement ELSE MatchedStatement {
         Node *n = new_node("If", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
         
         if ($5) add_child(n, $5);
@@ -378,6 +407,7 @@ MatchedStatement
     }
     | WHILE LPAR ExprOrAssign RPAR MatchedStatement {
         Node *n = new_node("While", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
 
         if ($5) add_child(n, $5);
@@ -387,6 +417,7 @@ MatchedStatement
     }
     | RETURN ExprOpt SEMICOLON {
         Node *n = new_node("Return", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         if ($2) add_child(n, $2);
         $$ = n;
     }
@@ -396,6 +427,7 @@ MatchedStatement
     | SEMICOLON { $$ = NULL; }
     | PRINT LPAR PrintArg RPAR SEMICOLON {
         Node *n = new_node("Print", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
         $$ = n;
     }
@@ -405,6 +437,7 @@ MatchedStatement
 UnmatchedStatement
     : IF LPAR ExprOrAssign RPAR Statement {
         Node *n = new_node("If", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
 
         if ($5) add_child(n, $5);
@@ -415,6 +448,7 @@ UnmatchedStatement
     }
     | IF LPAR ExprOrAssign RPAR MatchedStatement ELSE UnmatchedStatement {
         Node *n = new_node("If", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
         
         if ($5) add_child(n, $5);
@@ -427,6 +461,7 @@ UnmatchedStatement
     }
     | WHILE LPAR ExprOrAssign RPAR UnmatchedStatement {
         Node *n = new_node("While", NULL);
+        set_node_loc(n, @1.first_line, @1.first_column);
         add_child(n, $3);
 
         if ($5) add_child(n, $5);
@@ -455,7 +490,8 @@ PrintArg
 MethodInvocation
     : IDENTIFIER LPAR ExprListOpt RPAR {
         Node *n = new_node("Call", NULL);
-        add_child(n, new_node("Identifier", $1));
+        add_child(n, make_identifier_at($1, @1.first_line, @1.first_column));
+        set_node_loc(n, @1.first_line, @1.first_column);
         free($1);
         add_child(n, $3);
         $$ = n;
@@ -477,7 +513,8 @@ ExprList
 Assignment
     : IDENTIFIER ASSIGN ExprOrAssign {
         Node *n = new_node("Assign", NULL);
-        add_child(n, new_node("Identifier", $1));
+        add_child(n, make_identifier_at($1, @1.first_line, @1.first_column));
+        set_node_loc(n, @2.first_line, @2.first_column);
         free($1);
         add_child(n, $3);
         $$ = n;
@@ -487,7 +524,8 @@ Assignment
 ParseArgs
     : PARSEINT LPAR IDENTIFIER LSQ ExprOrAssign RSQ RPAR {
         Node *n = new_node("ParseArgs", NULL);
-        add_child(n, new_node("Identifier", $3));
+        add_child(n, make_identifier_at($3, @3.first_line, @3.first_column));
+        set_node_loc(n, @1.first_line, @1.first_column);
         free($3);
         add_child(n, $5);
         $$ = n;
@@ -501,39 +539,40 @@ ExprOrAssign
     ;
 
 Expr
-    : Expr PLUS Expr { $$ = make_binary("Add", $1, $3); }
-    | Expr MINUS Expr { $$ = make_binary("Sub", $1, $3); }
-    | Expr STAR Expr { $$ = make_binary("Mul", $1, $3); }
-    | Expr DIV Expr { $$ = make_binary("Div", $1, $3); }
-    | Expr MOD Expr { $$ = make_binary("Mod", $1, $3); }
-    | Expr AND Expr { $$ = make_binary("And", $1, $3); }
-    | Expr OR Expr { $$ = make_binary("Or", $1, $3); }
-    | Expr XOR Expr { $$ = make_binary("Xor", $1, $3); }
-    | Expr LSHIFT Expr { $$ = make_binary("Lshift", $1, $3); }
-    | Expr RSHIFT Expr { $$ = make_binary("Rshift", $1, $3); }
-    | Expr EQ Expr { $$ = make_binary("Eq", $1, $3); }
-    | Expr GE Expr { $$ = make_binary("Ge", $1, $3); }
-    | Expr GT Expr { $$ = make_binary("Gt", $1, $3); }
-    | Expr LE Expr { $$ = make_binary("Le", $1, $3); }
-    | Expr LT Expr { $$ = make_binary("Lt", $1, $3); }
-    | Expr NE Expr { $$ = make_binary("Ne", $1, $3); }
-    | MINUS Expr %prec UMINUS { $$ = make_unary("Minus", $2); }
-    | PLUS Expr %prec UPLUS { $$ = make_unary("Plus", $2); }
-    | NOT Expr { $$ = make_unary("Not", $2); }
+    : Expr PLUS Expr { $$ = make_binary_at("Add", $1, $3, @2.first_line, @2.first_column); }
+    | Expr MINUS Expr { $$ = make_binary_at("Sub", $1, $3, @2.first_line, @2.first_column); }
+    | Expr STAR Expr { $$ = make_binary_at("Mul", $1, $3, @2.first_line, @2.first_column); }
+    | Expr DIV Expr { $$ = make_binary_at("Div", $1, $3, @2.first_line, @2.first_column); }
+    | Expr MOD Expr { $$ = make_binary_at("Mod", $1, $3, @2.first_line, @2.first_column); }
+    | Expr AND Expr { $$ = make_binary_at("And", $1, $3, @2.first_line, @2.first_column); }
+    | Expr OR Expr { $$ = make_binary_at("Or", $1, $3, @2.first_line, @2.first_column); }
+    | Expr XOR Expr { $$ = make_binary_at("Xor", $1, $3, @2.first_line, @2.first_column); }
+    | Expr LSHIFT Expr { $$ = make_binary_at("Lshift", $1, $3, @2.first_line, @2.first_column); }
+    | Expr RSHIFT Expr { $$ = make_binary_at("Rshift", $1, $3, @2.first_line, @2.first_column); }
+    | Expr EQ Expr { $$ = make_binary_at("Eq", $1, $3, @2.first_line, @2.first_column); }
+    | Expr GE Expr { $$ = make_binary_at("Ge", $1, $3, @2.first_line, @2.first_column); }
+    | Expr GT Expr { $$ = make_binary_at("Gt", $1, $3, @2.first_line, @2.first_column); }
+    | Expr LE Expr { $$ = make_binary_at("Le", $1, $3, @2.first_line, @2.first_column); }
+    | Expr LT Expr { $$ = make_binary_at("Lt", $1, $3, @2.first_line, @2.first_column); }
+    | Expr NE Expr { $$ = make_binary_at("Ne", $1, $3, @2.first_line, @2.first_column); }
+    | MINUS Expr %prec UMINUS { $$ = make_unary_at("Minus", $2, @1.first_line, @1.first_column); }
+    | PLUS Expr %prec UPLUS { $$ = make_unary_at("Plus", $2, @1.first_line, @1.first_column); }
+    | NOT Expr { $$ = make_unary_at("Not", $2, @1.first_line, @1.first_column); }
     | LPAR ExprOrAssign RPAR { $$ = $2; }
     | LPAR error RPAR { $$ = NULL; }
     | MethodInvocation { $$ = $1; }
     | ParseArgs { $$ = $1; }
     | IDENTIFIER DOTLENGTH {
         Node *n = new_node("Length", NULL);
-        add_child(n, new_node("Identifier", $1));
+        add_child(n, make_identifier_at($1, @1.first_line, @1.first_column));
+        set_node_loc(n, @2.first_line, @2.first_column);
         $$ = n;
         free($1);
     }
-    | IDENTIFIER { $$ = new_node("Identifier", $1); free($1); }
-    | NATURAL { $$ = new_node("Natural", $1); free($1); }
-    | DECIMAL { $$ = new_node("Decimal", $1); free($1); }
-    | BOOLLIT { $$ = new_node("BoolLit", $1); free($1); }
+    | IDENTIFIER { $$ = make_leaf_at("Identifier", $1, @1.first_line, @1.first_column); free($1); }
+    | NATURAL { $$ = make_leaf_at("Natural", $1, @1.first_line, @1.first_column); free($1); }
+    | DECIMAL { $$ = make_leaf_at("Decimal", $1, @1.first_line, @1.first_column); free($1); }
+    | BOOLLIT { $$ = make_leaf_at("BoolLit", $1, @1.first_line, @1.first_column); free($1); }
     ;
 
 %%
@@ -545,7 +584,7 @@ void yyerror(const char *s) {
 }
 
 void print_final_ast() {
-    if (flag_t && syntax_errors == 0 && semantic_errors == 0) {
+    if (flag_t && syntax_errors == 0) {
         print_ast(ast_root, 0);
     }
 }
