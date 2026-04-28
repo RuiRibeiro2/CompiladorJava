@@ -122,7 +122,7 @@
                strcmp(type, "Natural") == 0 || strcmp(type, "Decimal") == 0 ||
                strcmp(type, "BoolLit") == 0 || strcmp(type, "Length") == 0 ||
                strcmp(type, "Assign") == 0 || strcmp(type, "Call") == 0 ||
-               strcmp(type, "ParseArgs") == 0;
+               strcmp(type, "ParseArgs") == 0 || strcmp(type, "StrLit") == 0;
     }
 
     static void print_ast(Node *n, int depth) {

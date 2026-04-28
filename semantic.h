@@ -24,13 +24,24 @@ typedef struct method_entry {
     char **param_types;
     int param_count;
     Symbol *symbols;
+    struct node *ast_node;
     struct method_entry *next;
 } MethodEntry;
+
+typedef struct global_member {
+    int is_method;
+    union {
+        struct symbol *field;
+        struct method_entry *method;
+    } u;
+    struct global_member *next;
+} GlobalMember;
 
 typedef struct class_entry {
     char *name;
     Symbol *fields;
     MethodEntry *methods;
+    GlobalMember *members;
 } ClassEntry;
 
 int run_semantic_phase(Node *root, int print_tables);

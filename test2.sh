@@ -165,7 +165,9 @@ for d in "$folder"/*; do
 
 		# se pasta da meta 3 e se o caso de teste conter 'erro' no nome
 		if [[ "${d:(-1)}" == "3" ]] && [[ "$i" == *"erro"* ]]; then
-			"$bin" < "$i" | sort > "$output";
+			#"$bin" < "$i" | sort > "$output";
+			"$bin" < "$i" > "$output";
+			
 		else
 			"$bin" "$opts" < "$i" > "$output";
 		fi

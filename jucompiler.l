@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
 
     if (argc == 1){
         // meta mais recente
-        meta03();
+        meta03_s();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
