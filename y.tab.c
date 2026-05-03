@@ -2747,4 +2747,8 @@ void free_final_ast() {
     free_ast(ast_root);
     ast_root = NULL;
 }
+
+Node *get_ast_root() {
+    return ast_root;
+}
     

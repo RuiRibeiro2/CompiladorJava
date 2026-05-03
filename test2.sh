@@ -34,7 +34,7 @@ fi
 # por defeito e a pasta onde o script se encontra
 folder="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # path para o executavel 'gocompiler'
-bin="../jucompiler"
+bin="$folder/jucompiler"
 # meta a testar, testa todas por omissao
 meta="2"
 

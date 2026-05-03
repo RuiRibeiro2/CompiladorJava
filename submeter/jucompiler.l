@@ -16,8 +16,7 @@
     #include <stdio.h>
     #include <string.h>
     #include "y.tab.h"
-    #include "codegen.h"
-
+    #include "semantic.h"
 
     int row = 1;
     int column = 0;
@@ -245,7 +244,6 @@ extern int yyparse();
 extern void print_final_ast();
 extern int get_syntax_errors();
 extern int run_semantic(int print_tables);
-extern Node *get_ast_root();
 
 void meta01() {
     lex_only = 1;
@@ -281,20 +279,11 @@ void meta03_s() {
     meta03();
 }
 
-void meta04() {
-    yyparse();
-    if (get_syntax_errors() == 0) {
-        if (run_semantic(0) == 0) {
-            generate_llvm(get_ast_root());
-        }
-    }
-}
-
 int main(int argc, char **argv) {
 
     if (argc == 1){
         // meta mais recente
-        meta04();
+        meta03_s();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
