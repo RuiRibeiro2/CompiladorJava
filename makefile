@@ -6,8 +6,8 @@ EXECUTABLE=jucompiler
 
 all: $(EXECUTABLE)
 
-$(EXECUTABLE): lex.yy.c y.tab.c semantic.c
-	$(CC) $(CFLAGS) lex.yy.c y.tab.c semantic.c -o $(EXECUTABLE)
+$(EXECUTABLE): lex.yy.c y.tab.c semantic.c codegen.c
+	$(CC) $(CFLAGS) lex.yy.c y.tab.c semantic.c codegen.c -o $(EXECUTABLE)
 
 lex.yy.c: jucompiler.l
 	$(LEX) jucompiler.l
@@ -19,3 +19,6 @@ clean:
 	rm -f jucompiler lex.yy.c y.tab.c y.tab.h *.o
 
 .PHONY: all clean
+
+zip:
+	zip jucompiler.zip jucompiler.l jucompiler.y semantic.c semantic.h codegen.c codegen.h
