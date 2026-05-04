@@ -1,82 +1,122 @@
-# CompiladorJava
+# Relatório — Projeto `jucompiler`
 
-Relatório até à Meta 3(última meta desenvolvida) — Compilador Juc (`jucompiler`)
+Este relatório resume o desenvolvimento do compilador Juc até à Meta 3.
 
-Autores:
+**Autores**
 - Leonardo Duarte — 2023213089
 - Rui Ribeiro — 202118947
 
-## 1. Objetivo e enquadramento
-Até à Meta 3, desenvolvemos um compilador para a linguagem Juc (subconjunto de Java SE 9), com três fases funcionais:
-- análise lexical (Meta 1),
-- análise sintática com construção de AST (Meta 2),
-- análise semântica com tabelas de símbolos e anotação de tipos (Meta 3).
+**Contexto**
+- Linguagem alvo: Juc (subconjunto de Java SE 9)
+- Ferramentas: `flex` + `bison/yacc` + `gcc`
+- Ficheiros principais:
+  - `jucompiler.l` (lexer)
+  - `jucompiler.y` (parser + AST)
+  - `semantic.h` / `semantic.c` (análise semântica)
+  - `codegen.h`/ `codegen.h` (geração de código)
 
-O compilador lê da entrada padrão (`stdin`) e suporta as opções pedidas no enunciado: `-l`, `-e1`, `-t`, `-e2`, `-s`, `-e3`, além do modo por omissão.
+## (i) Gramática re-escrita
 
-## 2. Meta 1 — Análise lexical
-O analisador lexical foi implementado em `lex` (`jucompiler.l`) e reconhece os tokens definidos no enunciado:
-- identificadores, naturais, decimais, string literals, bool literals,
-- operadores, delimitadores e palavras‑chave de Juc,
-- `RESERVED` para palavras reservadas fora do subconjunto.
+A gramática do enunciado (em EBNF) foi reescrita para uma forma compatível com análise bottom-up em Yacc/Bison.
 
-Foi implementada contagem de linha/coluna (início em 1) e tratamento de comentários `//` e `/* ... */`.  
-Erros lexicais produzidos no formato oficial:
-- `illegal character`,
-- `invalid escape sequence`,
-- `unterminated comment`,
-- `unterminated string literal`.
+**Principais decisões**
+- Conversão de opcionais e repetições para não-terminais auxiliares:
+  - `ProgramMembers`, `FieldDeclTail`, `VarDeclTail`, `FormalParamsTail`, `StatementList`, `ExprListOpt`.
+- Resolução do `dangling else` com separação:
+  - `MatchedStatement` e `UnmatchedStatement`.
+- Definição explícita de precedência/associatividade, recorrendo a operadores `%left/right`:
+  - atribuição, lógicos, igualdade, relacionais, shifts, aritméticos, unários.
+- Criação de `%locations` para rastrear linha/coluna de tokens e nós AST, ao longo do ficheiro ".y".
 
-Com `-l`, imprime tokens + erros; com `-e1` (ou sem opção lexical), imprime apenas erros.
+**Resultado**
+- Parser estável para os construtores da linguagem Juc.
+- AST produzida sem nós supérfluos relevantes. ??? Falar neste tipo de nós
+- Recuperação básica de erro com produções `error` para continuar análise e reportar múltiplos erros.
 
-## 3. Meta 2 — Análise sintática e AST
-A gramática EBNF do enunciado foi convertida para Yacc/Bison (`jucompiler.y`), com:
-- regras de precedência/associatividade para expressões,
-- resolução do “dangling else” por separação de statements matched/unmatched,
-- recuperação básica de erros sintáticos com `error`.
+#####################################
 
-A AST contém apenas os nós relevantes (sem nós supérfluos), incluindo:
-`Program`, `MethodDecl`, `FieldDecl`, `VarDecl`, `If`, `While`, `Return`, `Print`, `Assign`, `Call`, `ParseArgs`, operadores e literais.
+## (ii) AST e tabela de símbolos
 
-Com `-t`, imprime a AST no formato exigido; com `-e2`, reporta só erros léxicos/sintáticos.
+A AST foi implementada com modelo `child/sibling`, adequado a árvores com número variável de filhos.
 
-## 4. Meta 3 — Análise semântica
-A semântica foi implementada em C (`semantic.h`/`semantic.c`) com:
+**Estrutura do Node**
+- `type`: categoria do nó
+- `value`: valor lexical (quando aplicável)(ex:Identifier(n))
+- `sem_type`: tipo semântico anotado (ex:Identifier(x) - boolean)
+- `line`, `col`: localização para mensagens de erro
+- `child`, `sibling`: ligação da árvore
 
-### 4.1 Tabelas de símbolos
-- tabela global da classe: campos e métodos (com assinatura),
-- tabela por método: `return`, parâmetros e variáveis locais.
+**Operações principais na AST**
+- criação de nós (`new_node`, nós unários/binários/folha)
+- anexação (`add_child`, `append_sibling`)
+- libertação de memória (`free_ast`)
+- impressão da AST:
+  - anotação simples da Meta 2 (`-t`)
+  - com anotação de tipos em expressões na Meta 3 (`-s`)
 
-Foram validadas:
-- redefinições (`Symbol <token> already defined`),
-- nome reservado `_` (`Symbol _ is reserved`).
+**Tabela de símbolos**
+- Classe (`ClassEntry`):
+  - campos globais
+  - métodos com assinaturas ??? explicar melhor assinaturas
+- Método (`MethodEntry`):
+  - símbolo especial `return`
+  - parâmetros
+  - variáveis locais
 
-Com `-s`, são impressas as tabelas e a AST anotada.
+**Regras verificadas na construção**
+- redefinições: `Symbol <token> already defined`
+- reservado `_`: `Symbol _ is reserved`
 
-### 4.2 Anotação de tipos
-Cada nó de expressão recebe `sem_type`:
-- terminais: `int`, `double`, `boolean`,
-- identificadores por lookup em escopo de método e depois classe,
-- operadores aritméticos, lógicos, comparação, shifts, unários,
-- `Assign`, `Call`, `ParseArgs`, `Length`.
+## (iii) Geração semântica (Meta 3)
 
-A resolução de métodos considera:
-- assinatura exata,
-- compatibilidade com promoção `int -> double`,
-- erro de ambiguidade ou símbolo inexistente.
+A Meta 3 foi implementada em `semantic.c`/`semantic.h`, com duas fases: construção de tabelas e anotação/verificação de tipos.
 
-### 4.3 Erros semânticos
-Foram integrados os erros semânticos pedidos no enunciado (incluindo incompatibilidades em `if`, `while`, `return`, operadores, bounds de naturais e chamadas ambíguas).  
-A análise continua após erro, usando `undef` para manter propagação sem abortar compilação.
+**Anotação de tipos por expressão**
+??? explicar melhor
+- Literais:
+  - `Natural -> int` (com validação de bounds)
+  - `Decimal -> double`
+  - `BoolLit -> boolean`
+- Identificadores:
+  - lookup em escopo de método, depois classe
+- Operadores:
+  - aritméticos (`+ - * / %`)
+  - lógicos (`&& || ^`)
+  - relacionais/equivalência (`< <= > >= == !=`)
+  - shifts (`<< >>`)
+  - unários (`+ - !`)
+- Nós especiais:
+  - `Assign`, `Call`, `ParseArgs`, `Length`
 
-## 5. Estruturas de dados e decisões técnicas
-- AST com nós ligados por `child/sibling`, incluindo `line/col` e `sem_type`.
-- Tabelas de símbolos por listas ligadas simples, suficientes para o escopo da linguagem (uma classe estática, sem blocos com novo escopo lexical independente).
-- Separação clara entre parsing e semântica permitiu evoluir de Meta 2 para Meta 3 sem refatoração estrutural pesada.
+**Resolução de métodos (`Call`)**
+- tenta assinatura exata
+- se não existir, tenta assinatura compatível (`int -> double`)
+- se >1 compatível: ambiguidade
+- se 0 compatíveis: símbolo não encontrado
 
-## 6. Estado final até Meta 3
-O `jucompiler` cumpre os requisitos funcionais das Metas 1, 2 e 3 do enunciado:
-- opções e formatos de output alinhados,
-- AST correta,
-- tabelas de símbolos e tipagem semântica com deteção de erros.
+**Erros semânticos tratados**
+- `Cannot find symbol <token>`
+- `Reference to method <token> is ambiguous`
+- `Operator <op> cannot be applied to type <t>`
+- `Operator <op> cannot be applied to types <t1>, <t2>`
+- `Incompatible type <t> in if/while/return/... statement`
+- `Number <token> out of bounds`
+- erros de duplicação/reservado nas tabelas
 
+**Estratégia de robustez**
+- em erro, propaga `undef` no nó e continua análise
+- permite acumular erros no mesmo input em vez de abortar no primeiro
+
+## Estado final (até Meta 3)
+
+**Opções funcionais**
+- `-l`: tokens + erros lexicais
+- `-e1`: apenas erros lexicais
+- `-t`: erros léxicos/sintáticos + AST (sem erros sintáticos)
+- `-e2`: apenas erros léxicos/sintáticos
+- `-s`: semântica + tabelas + AST anotada (sem erros sintáticos)
+- `-e3`: apenas erros semânticos (após sintaxe válida)
+
+**Conclusão**
+- As metas 1, 2 e 3 ficaram integradas no mesmo executável `jucompiler`.
+- A arquitetura ficou modular (lexer / parser+AST / semântica), facilitando manutenção e evolução.

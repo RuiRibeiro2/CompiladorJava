@@ -6,8 +6,8 @@ EXECUTABLE=jucompiler
 
 all: $(EXECUTABLE)
 
-$(EXECUTABLE): lex.yy.c y.tab.c semantic.c codegen.c
-	$(CC) $(CFLAGS) lex.yy.c y.tab.c semantic.c codegen.c -lfl -o $(EXECUTABLE)
+$(EXECUTABLE): lex.yy.c y.tab.c semantic.c
+	$(CC) $(CFLAGS) lex.yy.c y.tab.c semantic.c -o $(EXECUTABLE)
 
 lex.yy.c: jucompiler.l
 	$(LEX) jucompiler.l
