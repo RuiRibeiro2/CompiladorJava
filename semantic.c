@@ -1111,6 +1111,12 @@ static const char *annotate_expr(Node *expr, ClassEntry *cls, MethodEntry *metho
 
     if (strcmp(expr->type, "Identifier") == 0)
     {
+        if (is_reserved_name(expr->value)) 
+        {
+            semantic_error_at(expr->line, expr->col, "Symbol %s is reserved", expr->value);
+            set_node_sem_type(expr, "undef");
+            return expr->sem_type;
+        }
         const char *resolved = lookup_symbol_type(cls, method, expr->value);
         if (!resolved)
         {
