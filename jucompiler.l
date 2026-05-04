@@ -280,22 +280,24 @@ void meta03_s() {
     flag_t = 1;
     meta03();
 }
-/*
+
 void meta04() {
     yyparse();
+    
     if (get_syntax_errors() == 0) {
-        if (run_semantic(0) == 0) {
+        int sem_errs = run_semantic(0);
+        
+        if (sem_errs == 0) {
             generate_llvm(get_ast_root());
         }
     }
-}*/
+}
 
 int main(int argc, char **argv) {
 
     if (argc == 1){
         // meta mais recente
-        //meta04();
-        meta03();
+        meta04();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {

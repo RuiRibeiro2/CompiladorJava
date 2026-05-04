@@ -1,5 +1,5 @@
 
-#line 3 "lex.yy.c"
+#line 2 "lex.yy.c"
 
 #define  YY_INT_ALIGNED short int
 
@@ -729,9 +729,9 @@ char *yytext;
     int flag_t = 0;
     int flag_s = 0;
 
-#line 733 "lex.yy.c"
+#line 732 "lex.yy.c"
 
-#line 735 "lex.yy.c"
+#line 734 "lex.yy.c"
 
 #define INITIAL 0
 #define COMMENT 1
@@ -953,7 +953,7 @@ YY_DECL
 #line 60 "jucompiler.l"
 
 
-#line 957 "lex.yy.c"
+#line 956 "lex.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1608,7 +1608,7 @@ YY_RULE_SETUP
 #line 242 "jucompiler.l"
 ECHO;
 	YY_BREAK
-#line 1612 "lex.yy.c"
+#line 1611 "lex.yy.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -2655,22 +2655,24 @@ void meta03_s() {
     flag_t = 1;
     meta03();
 }
-/*
+
 void meta04() {
     yyparse();
+    
     if (get_syntax_errors() == 0) {
-        if (run_semantic(0) == 0) {
+        int sem_errs = run_semantic(0);
+        
+        if (sem_errs == 0) {
             generate_llvm(get_ast_root());
         }
     }
-}*/
+}
 
 int main(int argc, char **argv) {
 
     if (argc == 1){
         // meta mais recente
-        //meta04();
-        meta03();
+        meta04();
     } else if (argc > 1 && strcmp(argv[1], "-e1") == 0) {
         meta01();
     } else if (argc > 1 && strcmp(argv[1], "-l") == 0) {
