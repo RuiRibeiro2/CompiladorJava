@@ -39,7 +39,7 @@ struct LocalVar
 {
     char *name;
     char *type;
-    char ptr[2048];
+    char ptr[64];
     LocalVar *next;
 };
 
@@ -55,7 +55,7 @@ struct StringConst
 struct ExprValue
 {
     const char *type;
-    char place[2048];
+    char place[64];
 };
 
 static char *xstrdup(const char *s)
@@ -162,29 +162,24 @@ static char *build_signature(char **param_types, int param_count)
 
 static char *build_method_llvm_name(const char *name, char **param_types, int param_count, int is_entry_main, const char *ret_type)
 {
-    char base[1024] = {0};
-    char buf[2048] = {0};
+    char buf[128] = {0};
 
-    if (is_entry_main && strcmp(name, "main") == 0)
+    if (strcmp(name, "main") == 0)
     {
-        return xstrdup("main");
-    }
-
-    sanitize_identifier(name, base, sizeof(base));
-    snprintf(buf, sizeof(buf), "%s__", base);
-
-    if (param_count == 0)
-    {
-        strcat(buf, "v");
+        strcpy(buf, "fakemain");
     }
     else
     {
-        for (int i = 0; i < param_count; i++)
-        {
-            strcat(buf, type_code(param_types[i]));
-            if (i + 1 < param_count)
-                strcat(buf, "_");
-        }
+        strcpy(buf, name);
+    }
+
+    for (int i = 0; i < param_count; i++)
+    {
+        strcat(buf, ".");
+        if (strcmp(param_types[i], "String[]") == 0)
+            strcat(buf, "StringArray");
+        else
+            strcat(buf, param_types[i]);
     }
     return xstrdup(buf);
 }
@@ -203,7 +198,8 @@ static MethodInfo *find_method(CodegenCtx *ctx, const char *name, const char *si
 
 static LocalVar *find_local(CodegenCtx *ctx, const char *name)
 {
-    if (!name) return NULL;
+    if (!name)
+        return NULL;
     for (LocalVar *v = ctx->locals; v; v = v->next)
     {
         if (strcmp(v->name, name) == 0)
@@ -255,13 +251,27 @@ static StringConst *intern_string(CodegenCtx *ctx, const char *token)
             i++;
             switch (token[i])
             {
-            case 'n': c = 0x0A; break;
-            case 'r': c = 0x0D; break;
-            case 't': c = 0x09; break;
-            case 'f': c = 0x0C; break;
-            case '\\': c = 0x5C; break;
-            case '"': c = 0x22; break;
-            default: c = (unsigned char)token[i]; break;
+            case 'n':
+                c = 0x0A;
+                break;
+            case 'r':
+                c = 0x0D;
+                break;
+            case 't':
+                c = 0x09;
+                break;
+            case 'f':
+                c = 0x0C;
+                break;
+            case '\\':
+                c = 0x5C;
+                break;
+            case '"':
+                c = 0x22;
+                break;
+            default:
+                c = (unsigned char)token[i];
+                break;
             }
         }
         enc[j++] = '\\';
@@ -300,7 +310,7 @@ static void collect_methods(Node *root, CodegenCtx *ctx)
             int count = 0;
             for (Node *pd = params->child; pd; pd = pd->sibling)
                 count++;
-            
+
             MethodInfo *m = (MethodInfo *)calloc(1, sizeof(MethodInfo));
             m->name = xstrdup(id->value ? id->value : "");
             m->ret_type = xstrdup(node_type_to_juc_type(ret));
@@ -330,12 +340,15 @@ static void collect_methods(Node *root, CodegenCtx *ctx)
 
 static int stmt_always_returns(Node *stmt)
 {
-    if (!stmt) return 0;
-    if (strcmp(stmt->type, "Return") == 0) return 1;
+    if (!stmt)
+        return 0;
+    if (strcmp(stmt->type, "Return") == 0)
+        return 1;
     if (strcmp(stmt->type, "Block") == 0)
     {
         for (Node *c = stmt->child; c; c = c->sibling)
-            if (stmt_always_returns(c)) return 1;
+            if (stmt_always_returns(c))
+                return 1;
     }
     if (strcmp(stmt->type, "If") == 0)
     {
@@ -344,24 +357,29 @@ static int stmt_always_returns(Node *stmt)
     return 0;
 }
 
-// Scans ahead in the AST to safely pre-allocate stack slots for short-circuit evaluation 
-static int count_logic_ops(Node *n) 
+static int count_logic_ops(Node *n)
 {
-    if (!n) return 0;
+    if (!n)
+        return 0;
     int count = 0;
-    if (strcmp(n->type, "And") == 0 || strcmp(n->type, "Or") == 0) count = 1;
+    if (strcmp(n->type, "And") == 0 || strcmp(n->type, "Or") == 0)
+        count = 1;
     return count + count_logic_ops(n->child) + count_logic_ops(n->sibling);
 }
 
 static ExprValue cast_value(CodegenCtx *ctx, ExprValue v, const char *to_type)
 {
-    if (strcmp(v.type, to_type) == 0) return v;
+    if (!v.type || !to_type)
+        return v;
+
+    if (strcmp(v.type, to_type) == 0)
+        return v;
     if (strcmp(v.type, "int") == 0 && strcmp(to_type, "double") == 0)
     {
         int t = new_temp(ctx);
         printf("  %%t%d = sitofp i32 %s to double\n", t, v.place);
         v.type = "double";
-        snprintf(v.place, 2048, "%%t%d", t);
+        snprintf(v.place, sizeof(v.place), "%%t%d", t);
     }
     return v;
 }
@@ -374,32 +392,56 @@ static ExprValue load_identifier(CodegenCtx *ctx, Node *expr)
     const char *name = expr->value ? expr->value : "";
     LocalVar *lv = find_local(ctx, name);
     int t = new_temp(ctx);
-    
+
     char sname[1024];
     sanitize_identifier(name, sname, sizeof(sname));
-    
+
     v.type = lv ? lv->type : (expr->sem_type ? expr->sem_type : "int");
-    printf("  %%t%d = load %s, %s* %s%s\n", t, juc_to_llvm_type(v.type), juc_to_llvm_type(v.type), lv ? "" : "@g_", lv ? lv->ptr : sname);
-    snprintf(v.place, 2048, "%%t%d", t);
+    printf("  %%t%d = load %s, %s* %s%s\n", t, juc_to_llvm_type(v.type), juc_to_llvm_type(v.type), lv ? "" : "@global_", lv ? lv->ptr : sname);
+    snprintf(v.place, sizeof(v.place), "%%t%d", t);
     return v;
 }
 
 static ExprValue gen_call(CodegenCtx *ctx, Node *call)
 {
     ExprValue out;
+    out.type = "int";
+    strcpy(out.place, "0");
+
+    if (!call || !call->child)
+        return out;
+
     Node *callee = call->child, *arg = callee->sibling;
-    ExprValue *args = (ExprValue *)calloc(1024, sizeof(ExprValue));
+    const char *callee_name = callee->value ? callee->value : "unknown_method";
+
+    int total_args = 0;
+    Node *temp_arg = arg;
+    while (temp_arg)
+    {
+        total_args++;
+        temp_arg = temp_arg->sibling;
+    }
+
+    ExprValue *args = (ExprValue *)calloc(total_args > 0 ? total_args : 1, sizeof(ExprValue));
+    if (!args)
+    {
+        exit(1);
+    }
+
     int argc = 0;
-    while (arg && argc < 1024)
+    while (arg)
     {
         args[argc++] = gen_expr(ctx, arg);
         arg = arg->sibling;
     }
-    MethodInfo *m = find_method(ctx, callee->value, callee->sem_type);
+
+    MethodInfo *m = find_method(ctx, callee_name, callee->sem_type);
     if (!m)
         for (m = ctx->methods; m; m = m->next)
-            if (strcmp(m->name, callee->value) == 0 && m->param_count == argc)
+            if (strcmp(m->name, callee_name) == 0 && m->param_count == argc)
                 break;
+   
+
     if (!m)
     {
         free(args);
@@ -407,8 +449,10 @@ static ExprValue gen_call(CodegenCtx *ctx, Node *call)
         strcpy(out.place, "0");
         return out;
     }
+
     for (int i = 0; i < argc; i++)
         args[i] = cast_value(ctx, args[i], m->param_types[i]);
+
     if (strcmp(m->ret_type, "void") == 0)
     {
         printf("  call void @%s(", m->llvm_name);
@@ -420,11 +464,13 @@ static ExprValue gen_call(CodegenCtx *ctx, Node *call)
         int t = new_temp(ctx);
         printf("  %%t%d = call %s @%s(", t, juc_to_llvm_type(m->ret_type), m->llvm_name);
         out.type = m->ret_type;
-        snprintf(out.place, 2048, "%%t%d", t);
+        snprintf(out.place, sizeof(out.place), "%%t%d", t);
     }
+
     for (int i = 0; i < argc; i++)
         printf("%s%s %s", i ? ", " : "", juc_to_llvm_type(args[i].type), args[i].place);
     printf(")\n");
+
     free(args);
     return out;
 }
@@ -432,56 +478,53 @@ static ExprValue gen_call(CodegenCtx *ctx, Node *call)
 static ExprValue gen_expr(CodegenCtx *ctx, Node *expr)
 {
     ExprValue v;
-    char num[2048];
+    char num[32];
     v.type = "int";
     strcpy(v.place, "0");
-    if (!expr || !expr->type) return v;
-    
+    if (!expr || !expr->type)
+        return v;
+
     if (strcmp(expr->type, "Natural") == 0)
     {
-        strip_underscores(expr->value, num, 2048);
-        snprintf(v.place, 2048, "%s", num);
+        strip_underscores(expr->value, num, sizeof(num));
+        snprintf(v.place, sizeof(v.place), "%s", num);
         return v;
     }
     if (strcmp(expr->type, "Decimal") == 0)
     {
-        strip_underscores(expr->value, num, 2048);
+        strip_underscores(expr->value, num, sizeof(num));
         v.type = "double";
-        snprintf(v.place, 2048, "%.16e", strtod(num, NULL));
+        snprintf(v.place, sizeof(v.place), "%.16e", strtod(num, NULL));
         return v;
     }
     if (strcmp(expr->type, "BoolLit") == 0)
     {
         v.type = "boolean";
-        snprintf(v.place, 2048, "%s", strcmp(expr->value, "true") == 0 ? "1" : "0");
+        snprintf(v.place, sizeof(v.place), "%s", strcmp(expr->value, "true") == 0 ? "1" : "0");
         return v;
     }
-    if (strcmp(expr->type, "Identifier") == 0) return load_identifier(ctx, expr);
-    if (strcmp(expr->type, "Call") == 0) return gen_call(ctx, expr);
+    if (strcmp(expr->type, "Identifier") == 0)
+        return load_identifier(ctx, expr);
+    if (strcmp(expr->type, "Call") == 0)
+        return gen_call(ctx, expr);
+
     if (strcmp(expr->type, "ParseArgs") == 0)
     {
         ExprValue base = load_identifier(ctx, expr->child), i = gen_expr(ctx, expr->child->sibling);
         int t1 = new_temp(ctx), t2 = new_temp(ctx), t3 = new_temp(ctx);
-        if (ctx->current_method->is_entry_main)
-        {
-            int t = new_temp(ctx);
-            printf("  %%t%d = add i32 %s, 1\n", t, i.place);
-            snprintf(i.place, 2048, "%%t%d", t);
-        }
         printf("  %%t%d = getelementptr inbounds i8*, i8** %s, i32 %s\n  %%t%d = load i8*, i8** %%t%d\n  %%t%d = call i32 @atoi(i8* %%t%d)\n", t1, base.place, i.place, t2, t1, t3, t2);
-        snprintf(v.place, 2048, "%%t%d", t3);
+        snprintf(v.place, sizeof(v.place), "%%t%d", t3);
         return v;
     }
+
     if (strcmp(expr->type, "Length") == 0)
     {
-        if (ctx->current_method->is_entry_main)
-        {
-            int t = new_temp(ctx);
-            printf("  %%t%d = sub i32 %%argc, 1\n", t);
-            snprintf(v.place, 2048, "%%t%d", t);
-        }
+        int t = new_temp(ctx);
+        printf("  %%t%d = load i32, i32* @global_argc_len\n", t);
+        snprintf(v.place, sizeof(v.place), "%%t%d", t);
         return v;
     }
+
     if (strcmp(expr->type, "Assign") == 0)
     {
         Node *lhs = expr->child, *rhs = lhs->sibling;
@@ -489,11 +532,11 @@ static ExprValue gen_expr(CodegenCtx *ctx, Node *expr)
         ExprValue rv = gen_expr(ctx, rhs);
         const char *ty = lv ? lv->type : (lhs->sem_type ? lhs->sem_type : "int");
         rv = cast_value(ctx, rv, ty);
-        
+
         char sname[1024];
         sanitize_identifier(lhs->value, sname, sizeof(sname));
-        
-        printf("  store %s %s, %s* %s%s\n", juc_to_llvm_type(ty), rv.place, juc_to_llvm_type(ty), lv ? "" : "@g_", lv ? lv->ptr : sname);
+
+        printf("  store %s %s, %s* %s%s\n", juc_to_llvm_type(ty), rv.place, juc_to_llvm_type(ty), lv ? "" : "@global_", lv ? lv->ptr : sname);
         v.type = ty;
         strcpy(v.place, rv.place);
         return v;
@@ -508,7 +551,7 @@ static ExprValue gen_expr(CodegenCtx *ctx, Node *expr)
         ExprValue b = gen_expr(ctx, expr->child->sibling);
         printf("  store i1 %s, i1* %%logic_tmp_%d\n  br label %%L%d\nL%d:\n  %%t%d = load i1, i1* %%logic_tmp_%d\n", b.place, tmp_idx, end, end, fin, tmp_idx);
         v.type = "boolean";
-        snprintf(v.place, 2048, "%%t%d", fin);
+        snprintf(v.place, sizeof(v.place), "%%t%d", fin);
         return v;
     }
     if (strcmp(expr->type, "Plus") == 0 || strcmp(expr->type, "Minus") == 0 || strcmp(expr->type, "Not") == 0)
@@ -524,12 +567,13 @@ static ExprValue gen_expr(CodegenCtx *ctx, Node *expr)
             v.type = "boolean";
         }
         else if (strcmp(a.type, "double") == 0)
-            printf("  %%t%d = fsub double 0.0, %s\n", t, a.place);
+            printf("  %%t%d = fsub double -0.0, %s\n", t, a.place);
         else
             printf("  %%t%d = sub i32 0, %s\n", t, a.place);
-        snprintf(v.place, 2048, "%%t%d", t);
+        snprintf(v.place, sizeof(v.place), "%%t%d", t);
         return v;
     }
+
     Node *l = expr->child, *r = l->sibling;
     ExprValue a = gen_expr(ctx, l), b = gen_expr(ctx, r);
     int t = new_temp(ctx);
@@ -571,7 +615,7 @@ static ExprValue gen_expr(CodegenCtx *ctx, Node *expr)
     }
     else if (strcmp(expr->type, "Lshift") == 0 || strcmp(expr->type, "Rshift") == 0)
         printf("  %%t%d = %s i32 %s, %s\n", t, strcmp(expr->type, "Lshift") == 0 ? "shl" : "ashr", a.place, b.place);
-    snprintf(v.place, 2048, "%%t%d", t);
+    snprintf(v.place, sizeof(v.place), "%%t%d", t);
     return v;
 }
 
@@ -581,7 +625,13 @@ static void gen_statement(CodegenCtx *ctx, Node *stmt, const char *ret_type)
         return;
     if (strcmp(stmt->type, "Block") == 0)
         for (Node *c = stmt->child; c; c = c->sibling)
+        {
             gen_statement(ctx, c, ret_type);
+            if (ctx->terminated)
+            {
+                break;
+            }
+        }
     else if (strcmp(stmt->type, "If") == 0)
     {
         ExprValue c = gen_expr(ctx, stmt->child);
@@ -590,13 +640,16 @@ static void gen_statement(CodegenCtx *ctx, Node *stmt, const char *ret_type)
         ctx->terminated = 0;
         gen_statement(ctx, stmt->child->sibling, ret_type);
         int t1 = ctx->terminated;
-        if (!t1) printf("  br label %%L%d\n", l3);
+        if (!t1)
+            printf("  br label %%L%d\n", l3);
         printf("L%d:\n", l2);
         ctx->terminated = 0;
         gen_statement(ctx, stmt->child->sibling->sibling, ret_type);
         int t2 = ctx->terminated;
-        if (!t2) printf("  br label %%L%d\n", l3);
-        if (t1 && t2) ctx->terminated = 1;
+        if (!t2)
+            printf("  br label %%L%d\n", l3);
+        if (t1 && t2)
+            ctx->terminated = 1;
         else
         {
             ctx->terminated = 0;
@@ -611,19 +664,38 @@ static void gen_statement(CodegenCtx *ctx, Node *stmt, const char *ret_type)
         printf("  br i1 %s, label %%L%d, label %%L%d\nL%d:\n", c.place, l2, l3, l2);
         ctx->terminated = 0;
         gen_statement(ctx, stmt->child->sibling, ret_type);
-        if (!ctx->terminated) printf("  br label %%L%d\n", l1);
+        if (!ctx->terminated)
+            printf("  br label %%L%d\n", l1);
         printf("L%d:\n", l3);
         ctx->terminated = 0;
     }
     else if (strcmp(stmt->type, "Return") == 0)
     {
         if (strcmp(ret_type, "void") == 0)
-            printf("  ret %s\n", ctx->current_method->is_entry_main ? "i32 0" : "void");
+        {
+            if (stmt->child)
+            {
+                gen_expr(ctx, stmt->child);
+            }
+            printf("  ret void\n");
+        }
         else
         {
-            ExprValue v = gen_expr(ctx, stmt->child);
-            v = cast_value(ctx, v, ret_type);
-            printf("  ret %s %s\n", juc_to_llvm_type(ret_type), v.place);
+            if (stmt->child)
+            {
+                ExprValue v = gen_expr(ctx, stmt->child);
+                v = cast_value(ctx, v, ret_type);
+                printf("  ret %s %s\n", juc_to_llvm_type(ret_type), v.place);
+            }
+            else
+            {
+                if (strcmp(ret_type, "double") == 0)
+                    printf("  ret double 0.0\n");
+                else if (strcmp(ret_type, "boolean") == 0)
+                    printf("  ret i1 0\n");
+                else
+                    printf("  ret i32 0\n");
+            }
         }
         ctx->terminated = 1;
     }
@@ -664,7 +736,7 @@ static void collect_locals_from_method_body(CodegenCtx *ctx, Node *body)
             LocalVar *lv = (LocalVar *)calloc(1, sizeof(LocalVar));
             if (lv && id && id->value)
             {
-                char safe[1024];
+                char safe[32];
                 lv->name = xstrdup(id->value);
                 lv->type = xstrdup(node_type_to_juc_type(t));
                 sanitize_identifier(id->value, safe, sizeof(safe));
@@ -685,57 +757,73 @@ static void emit_method(CodegenCtx *ctx, MethodInfo *m)
     ctx->temp_counter = 0;
     ctx->logic_op_counter = 0;
     ctx->terminated = 0;
-    
+
     for (int i = 0; i < m->param_count; i++)
     {
         LocalVar *lv = (LocalVar *)calloc(1, sizeof(LocalVar));
-        char safe[1024];
+        char safe[32];
         sanitize_identifier(m->param_names[i], safe, sizeof(safe));
         lv->name = xstrdup(m->param_names[i]);
         lv->type = xstrdup(m->param_types[i]);
-        snprintf(lv->ptr, 2048, "%%v_%s", safe);
+        snprintf(lv->ptr, sizeof(lv->ptr), "%%v_%s", safe);
         lv->next = ctx->locals;
         ctx->locals = lv;
     }
-    
+
     collect_locals_from_method_body(ctx, body);
-    
+
     if (m->is_entry_main)
-        printf("define i32 @main(i32 %%argc, i8** %%argv) {\n");
-    else
     {
-        printf("define %s @%s(", juc_to_llvm_type(m->ret_type), m->llvm_name);
-        for (int i = 0; i < m->param_count; i++)
-            printf("%s%s %%arg%d", i ? ", " : "", juc_to_llvm_type(m->param_types[i]), i);
-        printf(") {\n");
+        printf("define i32 @main(i32 %%argc, i8** %%argv) {\n");
+        printf("  %%argc_sub = sub i32 %%argc, 1\n");
+        printf("  store i32 %%argc_sub, i32* @global_argc_len\n");
+        printf("  %%shifted_argv = getelementptr inbounds i8*, i8** %%argv, i32 1\n");
+        printf("  call void @%s(i8** %%shifted_argv)\n", m->llvm_name);
+        printf("  ret i32 0\n");
+        printf("}\n\n");
     }
-    
-    // Allocate all normal variables
+
+    printf("define %s @%s(", juc_to_llvm_type(m->ret_type), m->llvm_name);
+    for (int i = 0; i < m->param_count; i++)
+        printf("%s%s %%arg%d", i ? ", " : "", juc_to_llvm_type(m->param_types[i]), i);
+    printf(") {\n");
+
     for (LocalVar *lv = ctx->locals; lv; lv = lv->next)
-        printf("  %s = alloca %s\n", lv->ptr, juc_to_llvm_type(lv->type));
-        
-    // Safely pre-allocate memory for logical short-circuiting to prevent stack overflow
+    {
+        const char *ll_type = juc_to_llvm_type(lv->type);
+        printf("  %s = alloca %s\n", lv->ptr, ll_type);
+
+        if (strcmp(ll_type, "double") == 0)
+            printf("  store double 0.0, double* %s\n", lv->ptr);
+        else if (strcmp(ll_type, "i1") == 0)
+            printf("  store i1 0, i1* %s\n", lv->ptr);
+        else if (strcmp(ll_type, "i32") == 0)
+            printf("  store i32 0, i32* %s\n", lv->ptr);
+    }
+
     int logic_ops = count_logic_ops(body);
-    for (int i = 0; i < logic_ops; i++) {
+    for (int i = 0; i < logic_ops; i++)
+    {
         printf("  %%logic_tmp_%d = alloca i1\n", i);
     }
-    
-    int arg_idx = 0;
+
     for (int i = 0; i < m->param_count; i++)
     {
         LocalVar *lv = find_local(ctx, m->param_names[i]);
-        if (m->is_entry_main)
-            printf("  store i8** %%argv, i8*** %s\n", lv->ptr);
-        else
-            printf("  store %s %%arg%d, %s* %s\n", juc_to_llvm_type(lv->type), arg_idx++, juc_to_llvm_type(lv->type), lv->ptr);
+        printf("  store %s %%arg%d, %s* %s\n", juc_to_llvm_type(lv->type), i, juc_to_llvm_type(lv->type), lv->ptr);
     }
-    
+
     for (Node *it = body->child; it; it = it->sibling)
         if (strcmp(it->type, "VarDecl") != 0)
             gen_statement(ctx, it, m->ret_type);
-            
+
     if (!ctx->terminated)
-        printf("  ret %s\n", m->is_entry_main ? "i32 0" : (strcmp(m->ret_type, "void") == 0 ? "void" : (strcmp(m->ret_type, "double") == 0 ? "double 0.0" : "i32 0")));
+    {
+        if (strcmp(m->ret_type, "void") == 0) printf("  ret void\n");
+        else if (strcmp(m->ret_type, "double") == 0) printf("  ret double 0.0\n");
+        else if (strcmp(m->ret_type, "boolean") == 0) printf("  ret i1 0\n");
+        else printf("  ret i32 0\n");
+    }
     printf("}\n\n");
 }
 
@@ -744,27 +832,28 @@ void generate_llvm(Node *root)
     CodegenCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
     collect_methods(root, &ctx);
-    
+
     printf("declare i32 @printf(i8*, ...)\ndeclare i32 @atoi(i8*)\n");
     printf("@.fmt_int = private unnamed_addr constant [3 x i8] c\"%%d\\00\"\n");
     printf("@.fmt_double = private unnamed_addr constant [6 x i8] c\"%%.16e\\00\"\n");
     printf("@.fmt_str = private unnamed_addr constant [3 x i8] c\"%%s\\00\"\n");
     printf("@.str_true = private unnamed_addr constant [5 x i8] c\"true\\00\"\n");
     printf("@.str_false = private unnamed_addr constant [6 x i8] c\"false\\00\"\n\n");
-    
+    printf("@global_argc_len = global i32 0\n\n");
+
     if (root && root->child)
         for (Node *m = root->child->sibling; m; m = m->sibling)
             if (strcmp(m->type, "FieldDecl") == 0)
             {
                 const char *t = node_type_to_juc_type(m->child);
-                char safe[1024];
+                char safe[32];
                 sanitize_identifier(m->child->sibling->value, safe, sizeof(safe));
-                printf("@g_%s = global %s %s\n", safe, juc_to_llvm_type(t), strcmp(t, "double") == 0 ? "0.0" : "0");
+                printf("@global_%s = global %s %s\n", safe, juc_to_llvm_type(t), strcmp(t, "double") == 0 ? "0.0" : "0");
             }
-            
+
     for (MethodInfo *m = ctx.methods; m; m = m->next)
         emit_method(&ctx, m);
-        
+
     for (StringConst *s = ctx.strings; s; s = s->next)
         printf("@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n", s->name, s->length, s->encoded);
 }
